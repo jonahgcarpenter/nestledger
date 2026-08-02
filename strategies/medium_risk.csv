@@ -1,0 +1,18 @@
+Strategy,Category,Asset,Ticker,Allocation
+Medium risk,US stocks,iShares Core S&P 500 ETF,IVV,29.00%
+Medium risk,US stocks,Vanguard Morningstar Value ETF,VTV,12.00%
+Medium risk,US stocks,Vanguard Russell 1000 Growth ETF,VONG,11.00%
+Medium risk,US stocks,Invesco S&P 500 Quality ETF,SPHQ,8.00%
+Medium risk,US stocks,Schwab US Dividend Equity ETF,SCHD,5.00%
+Medium risk,US stocks,Invesco S&P 500 Momentum ETF,SPMO,4.00%
+Medium risk,US stocks,iShares Russell 2000 ETF,IWM,2.50%
+Medium risk,US stocks,State Street SPDR S&P Aerospace & Defense ETF,XAR,2.00%
+Medium risk,US bonds,iShares 0-3 Month Treasury Bond ETF,SGOV,16.00%
+Medium risk,International stocks,WisdomTree Japan Hedged Equity ETF,DXJ,3.00%
+Medium risk,International stocks,Xtrackers Harvest CSI 300 China A-Shares ETF,ASHR,2.50%
+Medium risk,International stocks,iShares MSCI Emerging Markets ex China ETF,EMXC,1.50%
+Medium risk,International stocks,VanEck Rare Earth and Strategic Metals ETF,REMX,1.00%
+Medium risk,International stocks,SPDR EURO STOXX 50 ETF,FEZ,1.00%
+Medium risk,Other,Select STOXX Europe Aerospace & Defense ETF,EUAD,1.00%
+Medium risk,Cash,Cash sweep,,0.50%
+Medium risk,Total,,,100.00%

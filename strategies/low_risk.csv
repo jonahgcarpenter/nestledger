@@ -1,0 +1,10 @@
+Strategy,Category,Asset,Ticker,Allocation
+Low risk,US bonds,iShares 0-3 Month Treasury Bond ETF,SGOV,25.00%
+Low risk,US bonds,Vanguard Total Bond Market ETF,BND,30.00%
+Low risk,US bonds,Vanguard Short-Term Inflation-Protected Securities ETF,VTIP,10.00%
+Low risk,US stocks,iShares Core S&P 500 ETF,IVV,15.00%
+Low risk,US stocks,Vanguard Value ETF,VTV,8.00%
+Low risk,US stocks,Schwab US Dividend Equity ETF,SCHD,5.00%
+Low risk,International stocks,Vanguard Total International Stock ETF,VXUS,5.00%
+Low risk,Alternative,SPDR Gold MiniShares Trust,GLDM,2.00%
+Low risk,Total,,,100.00%
