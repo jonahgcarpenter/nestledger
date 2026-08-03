@@ -570,7 +570,7 @@ def merchant_filters():
         pattern = normalize_merchant(request.form.get("pattern", "")).casefold()
         match_type = request.form.get("match_type", "contains")
         category_id = request.form.get("category_id", type=int)
-        excluded = "excluded" in request.form
+        excluded = request.form.get("excluded") == "yes"
         category_ids = {row["id"] for row in database.list_categories()}
         valid_category = category_id is None or category_id in category_ids
         if (

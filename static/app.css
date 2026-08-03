@@ -102,11 +102,13 @@ tbody tr:last-child td { border-bottom: 0; }
 .import-meta { display: flex; flex-wrap: wrap; gap: .55rem; margin: 1.4rem 0; }
 .tag { padding: .45rem .65rem; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .76rem; }
 .empty { padding: 2.5rem 1rem; color: var(--muted); text-align: center; }
-.rule-form { grid-template-columns: 2fr 1fr 1fr auto auto; }
+.rule-form { grid-template-columns: 2fr 1fr 1fr .7fr auto; }
+.category-form { grid-template-columns: minmax(0, 1fr) minmax(220px, .35fr); }
+.category-name-input { max-width: 420px; min-height: 44px; }
+.category-name[hidden], .category-name-input[hidden], [data-category-rename][hidden], [data-category-save][hidden], [data-category-cancel][hidden] { display: none; }
 .inline-form { display: inline; }
 .panel-offset, .actions-offset { margin-top: 1.2rem; }
 .actions-leading { margin-bottom: 1.2rem; }
-.filter-check { align-self: center; margin-bottom: 0; }
 .error-tag { color: var(--red); }
 
 @media (min-width: 1400px) {

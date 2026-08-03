@@ -322,13 +322,14 @@ class AppFlowTests(unittest.TestCase):
             transaction = database.list_transactions()[0]
             self.assertEqual(transaction["category_id"], categories["Groceries"])
             self.assertEqual(transaction["needs_review"], 0)
+            self.assertEqual(transaction["excluded"], 0)
 
         self.client.post(
             "/spending/filters",
             data={
                 "pattern": "acme",
                 "match_type": "contains",
-                "excluded": "on",
+                "excluded": "yes",
                 "csrf_token": self.csrf,
             },
         )
@@ -350,12 +351,32 @@ class AppFlowTests(unittest.TestCase):
             category = next(
                 row for row in database.list_categories() if row["name"] == "Education"
             )
+            database.create_import(
+                "c" * 64,
+                "sample.pdf",
+                [
+                    {
+                        "source_row": 0,
+                        "transaction_date": "2024-01-10",
+                        "original_description": "BOOK STORE",
+                        "merchant": "BOOK STORE",
+                        "normalized_merchant": "book store",
+                        "amount_cents": 2500,
+                        "category_id": category["id"],
+                        "excluded": False,
+                        "needs_review": False,
+                    }
+                ],
+            )
         self.client.post(
             f"/spending/filters/categories/{category['id']}/update",
             data={"name": "Learning", "csrf_token": self.csrf},
         )
         response = self.client.get("/spending/filters")
         self.assertIn(b"Learning", response.data)
+        self.assertIn(b"data-category-rename", response.data)
+        with application.app.app_context():
+            self.assertEqual(database.list_transactions()[0]["category_name"], "Learning")
         self.client.post(
             f"/spending/filters/categories/{category['id']}/delete",
             data={"csrf_token": self.csrf},
