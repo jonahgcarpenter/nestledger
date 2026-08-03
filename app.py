@@ -119,11 +119,6 @@ def _parse_cents(value):
     return int((amount * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-def _category_data():
-    categories = database.list_categories()
-    return categories, {row["name"]: row["id"] for row in categories}
-
-
 def _apply_filters(merchant, filters):
     normalized = normalize_merchant(merchant).casefold()
     category_id = None
@@ -306,16 +301,29 @@ def load_portfolios():
     return portfolios, errors
 
 
-@app.route("/")
+@app.context_processor
+def navigation_strategies():
+    portfolios, _errors = load_portfolios()
+    return {"nav_strategies": portfolios}
+
+
+@app.get("/")
 def index():
+    return redirect(url_for("strategies"))
+
+
+@app.get("/ira/strategies")
+def strategies():
     portfolios, errors = load_portfolios()
     if portfolios:
-        return redirect(url_for("portfolio", slug=portfolios[0]["slug"]))
-    return render_template("index.html", portfolios=[], portfolio=None, errors=errors)
+        return redirect(url_for("strategy", slug=portfolios[0]["slug"]))
+    return render_template(
+        "ira_strategies/index.html", portfolios=[], portfolio=None, errors=errors
+    )
 
 
-@app.route("/portfolio/<slug>")
-def portfolio(slug):
+@app.get("/ira/strategies/<slug>")
+def strategy(slug):
     portfolios, errors = load_portfolios()
     selected = next((item for item in portfolios if item["slug"] == slug), None)
     if selected is None:
@@ -342,11 +350,14 @@ def portfolio(slug):
         for name, holdings in category_groups.items()
     ]
     return render_template(
-        "index.html", portfolios=portfolios, portfolio=selected, errors=errors
+        "ira_strategies/index.html",
+        portfolios=portfolios,
+        portfolio=selected,
+        errors=errors,
     )
 
 
-@app.route("/spending")
+@app.get("/spending/analyzer")
 def spending():
     category_id = request.args.get("category", type=int)
     query = request.args.get("q", "").strip()
@@ -369,19 +380,11 @@ def spending():
         for row in summaries
         if row["amount_cents"] > 0
     ]
-    imports = database.list_imports()
-    available_import_ids = {
-        item["id"]
-        for item in imports
-        if _statement_path(item["content_sha256"]).is_file()
-    }
     return render_template(
-        "spending.html",
+        "spending/index.html",
         transactions=transactions,
         category_chart=category_chart,
         categories=database.list_categories(),
-        imports=imports,
-        available_import_ids=available_import_ids,
         filters={
             "category": category_id,
             "q": query,
@@ -391,11 +394,19 @@ def spending():
     )
 
 
-@app.route("/spending/import", methods=("GET", "POST"))
+@app.route("/spending/statements", methods=("GET", "POST"))
 def import_statement_pdf():
     if request.method == "GET":
+        imports = database.list_imports()
+        available_import_ids = {
+            item["id"]
+            for item in imports
+            if _statement_path(item["content_sha256"]).is_file()
+        }
         return render_template(
-            "import_statement.html",
+            "spending/statements/import.html",
+            imports=imports,
+            available_import_ids=available_import_ids,
             tools={
                 "pdftotext": shutil.which("pdftotext") is not None,
                 "pdftoppm": shutil.which("pdftoppm") is not None,
@@ -419,10 +430,10 @@ def import_statement_pdf():
             return redirect(url_for("review_import", import_id=result["import_id"]))
         flash(result["message"], "error")
         return redirect(url_for("import_statement_pdf"))
-    return render_template("bulk_import_results.html", results=results)
+    return render_template("spending/statements/results.html", results=results)
 
 
-@app.route("/spending/import/<int:import_id>", methods=("GET", "POST"))
+@app.route("/spending/statements/<int:import_id>", methods=("GET", "POST"))
 def review_import(import_id):
     imported = database.get_import(import_id)
     if imported is None:
@@ -504,7 +515,7 @@ def review_import(import_id):
 
     warnings = json.loads(imported["warnings"] or "[]")
     return render_template(
-        "review_import.html",
+        "spending/statements/review.html",
         imported=imported,
         transactions=transactions,
         categories=categories,
@@ -513,7 +524,7 @@ def review_import(import_id):
     )
 
 
-@app.get("/spending/import/<int:import_id>/statement.pdf")
+@app.get("/spending/statements/<int:import_id>/pdf")
 def view_statement_pdf(import_id):
     imported = database.get_import(import_id)
     if imported is None:
@@ -536,7 +547,7 @@ def view_statement_pdf(import_id):
     return response
 
 
-@app.post("/spending/import/<int:import_id>/delete")
+@app.post("/spending/statements/<int:import_id>/delete")
 def remove_import(import_id):
     imported = database.get_import(import_id)
     if imported is None:
@@ -613,15 +624,10 @@ def merchant_filters():
                 flash("The filter could not be saved.", "error")
         return redirect(url_for("merchant_filters"))
     return render_template(
-        "filters.html",
+        "spending/filters.html",
         filters=database.list_filters(),
         categories=database.list_categories(),
     )
-
-
-@app.get("/spending/rules")
-def legacy_rules():
-    return redirect(url_for("merchant_filters"))
 
 
 @app.post("/spending/filters/<int:filter_id>/delete")
@@ -631,7 +637,7 @@ def remove_filter(filter_id):
     return redirect(url_for("merchant_filters"))
 
 
-@app.post("/spending/categories")
+@app.post("/spending/filters/categories")
 def add_category():
     name = request.form.get("name", "").strip()
     if not name:
@@ -645,7 +651,7 @@ def add_category():
     return redirect(url_for("merchant_filters"))
 
 
-@app.post("/spending/categories/<int:category_id>/update")
+@app.post("/spending/filters/categories/<int:category_id>/update")
 def rename_category(category_id):
     name = request.form.get("name", "").strip()
     if not name:
@@ -660,7 +666,7 @@ def rename_category(category_id):
     return redirect(url_for("merchant_filters"))
 
 
-@app.post("/spending/categories/<int:category_id>/delete")
+@app.post("/spending/filters/categories/<int:category_id>/delete")
 def remove_category(category_id):
     if not database.delete_category(category_id):
         abort(404)

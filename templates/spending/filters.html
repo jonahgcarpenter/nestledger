@@ -1,4 +1,4 @@
-{% extends "spending_base.html" %}
+{% extends "base.html" %}
 {% block title %}Filters & Categories{% endblock %}
 {% block content %}
   <p class="eyebrow">Configurable organization</p>
@@ -12,11 +12,11 @@
       <div><label for="pattern">Merchant pattern</label><input id="pattern" name="pattern" required placeholder="sample grocery"></div>
       <div><label for="match_type">Match</label><select id="match_type" name="match_type"><option value="contains">Contains</option><option value="exact">Exact</option></select></div>
       <div><label for="category_id">Category</label><select id="category_id" name="category_id"><option value="">No category change</option>{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select></div>
-      <label class="check" style="align-self: center"><input name="excluded" type="checkbox"> Exclude from spending</label>
+      <label class="check filter-check"><input name="excluded" type="checkbox"> Exclude from spending</label>
       <button class="button primary" type="submit">Save filter</button>
     </form>
 
-    <div class="panel table-wrap" style="margin-top: .8rem">
+    <div class="panel table-wrap panel-offset">
       <table><thead><tr><th>Pattern</th><th>Match</th><th>Category</th><th>Excluded</th><th></th></tr></thead><tbody>
         {% for filter in filters %}
           <tr><td class="merchant">{{ filter.pattern }}</td><td>{{ filter.match_type }}</td><td>{{ filter.category_name or "No change" }}</td><td>{{ "Yes" if filter.excluded else "No" }}</td><td><form action="{{ url_for('remove_filter', filter_id=filter.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button danger" type="submit">Delete</button></form></td></tr>
@@ -32,7 +32,7 @@
       <div><label for="category_name">New category</label><input id="category_name" name="name" required placeholder="Education"></div>
       <button class="button primary" type="submit">Add category</button>
     </form>
-    <div class="panel table-wrap" style="margin-top: .8rem">
+    <div class="panel table-wrap panel-offset">
       <table><thead><tr><th>Category</th><th>Rename</th><th></th></tr></thead><tbody>
         {% for category in categories %}
           <tr><td class="merchant">{{ category.name }}</td><td><form class="actions" action="{{ url_for('rename_category', category_id=category.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="name" value="{{ category.name }}" required><button class="button" type="submit">Rename</button></form></td><td><form action="{{ url_for('remove_category', category_id=category.id) }}" method="post" onsubmit="return confirm('Delete this category and its filters?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button danger" type="submit">Delete</button></form></td></tr>

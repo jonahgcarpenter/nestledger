@@ -1,4 +1,4 @@
-{% extends "spending_base.html" %}
+{% extends "base.html" %}
 {% block title %}Review Import{% endblock %}
 {% block content %}
   <p class="eyebrow">{{ "Imported statement" if imported.status == "confirmed" else "Review before saving" }}</p>
@@ -7,7 +7,7 @@
     <span class="tag">{{ imported.filename }}</span><span class="tag">{{ imported.extraction_method|upper }}</span><span class="tag">{{ imported.statement_start or "Unknown start" }} to {{ imported.statement_end or "Unknown end" }}</span><span class="tag">{{ transactions|length }} rows</span>
   </div>
   {% if pdf_available %}
-    <div class="actions" style="margin-bottom: 1rem"><a class="button" href="{{ url_for('view_statement_pdf', import_id=imported.id) }}" target="_blank" rel="noopener">View original PDF</a></div>
+    <div class="actions actions-leading"><a class="button" href="{{ url_for('view_statement_pdf', import_id=imported.id) }}" target="_blank" rel="noopener">View original PDF</a></div>
   {% else %}
     <p class="hint">The original PDF is unavailable. This can occur for imports created before PDF archiving was enabled.</p>
   {% endif %}
@@ -34,9 +34,9 @@
         </tbody>
       </table>
     </div>
-    <div class="actions" style="margin-top: 1rem">
+    <div class="actions actions-offset">
       {% if imported.status == "draft" %}<button class="button" name="action" value="save" type="submit">Save draft</button><button class="button primary" name="action" value="confirm" type="submit">Confirm import</button>{% else %}<a class="button primary" href="{{ url_for('spending') }}">Back to spending</a>{% endif %}
     </div>
   </form>
-  <form class="inline-form" action="{{ url_for('remove_import', import_id=imported.id) }}" method="post" onsubmit="return confirm('Delete this import and all of its transactions?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button danger" style="margin-top: .7rem" type="submit">Delete import</button></form>
+  <form class="inline-form" action="{{ url_for('remove_import', import_id=imported.id) }}" method="post" onsubmit="return confirm('Delete this import and all of its transactions?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button danger actions-offset" type="submit">Delete import</button></form>
 {% endblock %}

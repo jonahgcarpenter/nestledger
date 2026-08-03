@@ -46,7 +46,17 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Open `http://127.0.0.1:5000`. Choose **Spending & statements**, then **Import**.
+Open `http://127.0.0.1:5000`. The application uses one shared navigation and
+four top-level sections:
+
+- `/ira/strategies` for IRA allocation strategies
+- `/spending/analyzer` for categorized activity and reporting
+- `/spending/statements` for statement uploads and review
+- `/spending/filters` for categories and automatic filters
+
+Page templates are grouped by application section under
+`templates/ira_strategies/` and `templates/spending/`. Every page extends the
+shared `templates/base.html` shell and navigation.
 
 The SQLite database is created automatically at
 `instance/spending.sqlite3`. Successfully imported originals are retained under

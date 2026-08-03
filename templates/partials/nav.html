@@ -1,0 +1,22 @@
+<nav class="nav" aria-label="Primary navigation">
+  <div class="nav-links">
+    <div class="nav-menu">
+      <a href="{{ url_for('strategies') }}"{% if request.endpoint in ('index', 'strategies', 'strategy') %} class="active" aria-current="page"{% endif %}>IRA Strategies <span class="nav-caret" aria-hidden="true">&#9662;</span></a>
+      {% if nav_strategies %}
+        <div class="nav-dropdown" aria-label="Investment strategies">
+          {% for item in nav_strategies %}
+            <a href="{{ url_for('strategy', slug=item.slug) }}"{% if request.endpoint == 'strategy' and portfolio and portfolio.slug == item.slug %} class="active" aria-current="page"{% endif %}>{{ item.strategy }}</a>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+    <div class="nav-menu">
+      <a href="{{ url_for('spending') }}"{% if request.endpoint in ('spending', 'import_statement_pdf', 'review_import', 'view_statement_pdf', 'merchant_filters', 'add_category', 'rename_category', 'remove_category') %} class="active" aria-current="page"{% endif %}>Spending <span class="nav-caret" aria-hidden="true">&#9662;</span></a>
+      <div class="nav-dropdown" aria-label="Spending tools">
+        <a href="{{ url_for('spending') }}"{% if request.endpoint == 'spending' %} class="active" aria-current="page"{% endif %}>Analyzer</a>
+        <a href="{{ url_for('import_statement_pdf') }}"{% if request.endpoint in ('import_statement_pdf', 'review_import', 'view_statement_pdf') %} class="active" aria-current="page"{% endif %}>Statements</a>
+        <a href="{{ url_for('merchant_filters') }}"{% if request.endpoint in ('merchant_filters', 'add_category', 'rename_category', 'remove_category') %} class="active" aria-current="page"{% endif %}>Filters</a>
+      </div>
+    </div>
+  </div>
+</nav>

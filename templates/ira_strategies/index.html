@@ -1,0 +1,402 @@
+{% extends "base.html" %}
+{% block title %}{% if portfolio %}{{ portfolio.strategy }}{% else %}IRA Strategies{% endif %}{% endblock %}
+{% block main_class %}strategy-shell{% endblock %}
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='ira_strategies.css') }}">
+{% endblock %}
+{% block content %}
+    {% if errors %}
+      <div class="errors">
+        <strong>Some CSV files could not be loaded:</strong>
+        {% for error in errors %}<div>{{ error }}</div>{% endfor %}
+      </div>
+    {% endif %}
+
+    {% if portfolio %}
+      <header>
+        <p class="eyebrow">IRA portfolio blueprint</p>
+        <h1>{{ portfolio.strategy }} strategy</h1>
+        <p class="intro">
+          A target allocation across {{ portfolio.holdings|length }} investments.
+        </p>
+        <div class="category-strip" aria-label="Category allocation summary">
+          {% for category in portfolio.categories %}
+            <span class="category-pill">{{ category.name }} <strong>{{ "%.2f"|format(category.allocation) }}%</strong></span>
+          {% endfor %}
+        </div>
+      </header>
+
+      <section class="overview-grid" aria-label="Portfolio allocation">
+        <div class="panel chart-panel">
+          <div class="chart-details">
+            <p class="eyebrow">At a glance</p>
+            <h3>Allocation mix</h3>
+            <p>Each color maps to a holding in the strategy. Hover over the chart for a closer look.</p>
+            <div id="chartLegend" class="legend"></div>
+          </div>
+          <div class="chart-stage">
+            <canvas id="allocationChart" aria-label="Portfolio allocation pie chart" role="img"></canvas>
+            <div id="chartTooltip" class="chart-tooltip" hidden>
+              <strong id="tooltipTicker"></strong>
+              <span id="tooltipAllocation"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel table-wrap">
+          <table>
+            <colgroup>
+              <col>
+              <col style="width: 6.5rem">
+              <col style="width: 7rem">
+            </colgroup>
+            {% for group in portfolio.category_groups %}
+              <tbody class="investment-group">
+                <tr class="category-header">
+                  <th colspan="3" scope="rowgroup">
+                    <div class="category-heading">
+                      <span class="category-name">{{ group.name }}</span>
+                    </div>
+                  </th>
+                </tr>
+                <tr class="column-header">
+                  <th scope="col">Investment</th>
+                  <th scope="col">Ticker</th>
+                  <th scope="col">Target</th>
+                </tr>
+                {% for holding in group.holdings %}
+                  <tr class="holding-row">
+                    <td class="asset-name">{{ holding.asset }}</td>
+                    <td class="ticker"><span>{{ holding.ticker or "Cash" }}</span></td>
+                    <td class="allocation">{{ "%.2f"|format(holding.allocation) }}%</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            {% endfor %}
+          </table>
+        </div>
+      </section>
+
+      <section class="tools">
+        <div class="tools-header">
+          <p class="eyebrow">Allocation tools</p>
+          <h2 id="calculatorTitle">Plan your monthly deposit.</h2>
+          <p id="calculatorDescription" class="intro">See how much of your monthly contribution to direct toward each investment.</p>
+        </div>
+
+        <div class="panel allocation-workspace">
+          <div class="calculator-bar">
+            <div class="calculator-field">
+              <label for="calculatorMode">Calculator</label>
+              <select id="calculatorMode">
+                <option value="deposit">Monthly deposit</option>
+                <option value="rebalance">Portfolio rebalancing</option>
+              </select>
+            </div>
+
+            <div class="calculator-field">
+              <label id="calculatorAmountLabel" for="calculatorAmount">Monthly deposit amount</label>
+              <div class="money-input">
+                <span aria-hidden="true">$</span>
+                <input id="calculatorAmount" type="number" min="0" step="10" value="0" inputmode="decimal">
+              </div>
+            </div>
+          </div>
+
+          <div class="allocation-results" aria-live="polite">
+            <table>
+              <thead>
+                <tr>
+                  <th>Investment</th>
+                  <th>Target</th>
+                  <th id="amountColumnLabel">Monthly deposit</th>
+                </tr>
+              </thead>
+              {% for group in portfolio.category_groups %}
+                <tbody>
+                  <tr class="result-category">
+                    <th colspan="3" scope="rowgroup">{{ group.name }}</th>
+                  </tr>
+                  {% for holding in group.holdings %}
+                    <tr>
+                      <td class="result-investment">
+                        <strong>{{ holding.ticker or "Cash" }}</strong>
+                        <span>{{ holding.asset }}</span>
+                      </td>
+                      <td class="result-target">{{ "%.2f"|format(holding.allocation) }}%</td>
+                      <td class="result-money" data-result-allocation="{{ holding.allocation }}">$0.00</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              {% endfor %}
+            </table>
+          </div>
+        </div>
+      </section>
+
+    {% else %}
+      <div class="empty">
+        No valid portfolios were found. Add a CSV file to <code>strategies/</code> with the columns Strategy, Category, Asset, Ticker, and Allocation.
+      </div>
+    {% endif %}
+{% endblock %}
+{% block scripts %}
+  {% if portfolio %}
+    <script>
+      const holdings = {{ portfolio.holdings | tojson }};
+      const palette = [
+        "#264d3b", "#cf5a36", "#e0a52b", "#537f78", "#8a5d3b",
+        "#88739a", "#b4a13d", "#426b8a", "#b56576", "#6f7d50",
+        "#d17c57", "#5d596b", "#84a98c", "#a98467", "#577590",
+        "#c38d9e", "#7f8c8d", "#9c6644"
+      ];
+
+      const money = new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+
+      let chartMetrics;
+      let hoveredSlice = -1;
+      let animationFrame = null;
+      const sliceOffsets = holdings.map(() => 0);
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      function drawChart(resize = true) {
+        const canvas = document.getElementById("allocationChart");
+        const size = Math.max(180, Math.min(canvas.parentElement.clientWidth - 32, 400));
+        const ratio = window.devicePixelRatio || 1;
+        if (resize || !chartMetrics || chartMetrics.size !== size || chartMetrics.ratio !== ratio) {
+          canvas.width = size * ratio;
+          canvas.height = size * ratio;
+          canvas.style.width = `${size}px`;
+          canvas.style.height = `${size}px`;
+        }
+
+        const context = canvas.getContext("2d");
+        context.setTransform(ratio, 0, 0, ratio, 0, 0);
+        context.clearRect(0, 0, size, size);
+        const center = size / 2;
+        const radius = size * 0.43;
+        chartMetrics = { center, radius, innerRadius: radius * 0.48, size, ratio };
+        let angle = -Math.PI / 2;
+
+        holdings.forEach((holding, index) => {
+          const slice = (holding.allocation / 100) * Math.PI * 2;
+          const middleAngle = angle + slice / 2;
+          const offsetX = Math.cos(middleAngle) * sliceOffsets[index];
+          const offsetY = Math.sin(middleAngle) * sliceOffsets[index];
+
+          context.save();
+          context.globalAlpha = hoveredSlice === -1 || hoveredSlice === index ? 1 : 0.5;
+          if (hoveredSlice === index) {
+            context.shadowColor = "rgba(0, 0, 0, 0.55)";
+            context.shadowBlur = 16;
+          }
+          context.beginPath();
+          context.moveTo(center + offsetX, center + offsetY);
+          context.arc(
+            center + offsetX,
+            center + offsetY,
+            radius,
+            angle,
+            angle + slice
+          );
+          context.closePath();
+          context.fillStyle = palette[index % palette.length];
+          context.fill();
+          context.strokeStyle = "#111914";
+          context.lineWidth = 2;
+          context.stroke();
+          context.restore();
+          angle += slice;
+        });
+
+        context.beginPath();
+        context.arc(center, center, radius * 0.48, 0, Math.PI * 2);
+        context.fillStyle = "#111914";
+        context.fill();
+        context.fillStyle = "#edf4ef";
+        context.textAlign = "center";
+        context.textBaseline = "middle";
+        context.font = `700 ${Math.max(15, size * 0.055)}px system-ui`;
+        context.fillText("100%", center, center - 7);
+        context.fillStyle = "#98a79e";
+        context.font = `600 ${Math.max(10, size * 0.032)}px system-ui`;
+        context.fillText("allocated", center, center + 14);
+      }
+
+      function animateSlices() {
+        let stillMoving = false;
+
+        sliceOffsets.forEach((offset, index) => {
+          const target = index === hoveredSlice ? 10 : 0;
+          const difference = target - offset;
+          if (Math.abs(difference) > 0.05) {
+            sliceOffsets[index] += difference * 0.22;
+            stillMoving = true;
+          } else {
+            sliceOffsets[index] = target;
+          }
+        });
+
+        drawChart(false);
+        animationFrame = stillMoving ? requestAnimationFrame(animateSlices) : null;
+      }
+
+      function setHoveredSlice(index) {
+        if (hoveredSlice === index) return;
+        hoveredSlice = index;
+
+        if (reduceMotion) {
+          sliceOffsets.forEach((_, sliceIndex) => {
+            sliceOffsets[sliceIndex] = sliceIndex === hoveredSlice ? 10 : 0;
+          });
+          drawChart(false);
+          return;
+        }
+
+        if (animationFrame === null) animationFrame = requestAnimationFrame(animateSlices);
+      }
+
+      function holdingAtPoint(x, y) {
+        if (!chartMetrics) return null;
+
+        const dx = x - chartMetrics.center;
+        const dy = y - chartMetrics.center;
+        const distance = Math.hypot(dx, dy);
+        if (distance < chartMetrics.innerRadius || distance > chartMetrics.radius + 12) return null;
+
+        const fullCircle = Math.PI * 2;
+        const angle = (Math.atan2(dy, dx) + Math.PI / 2 + fullCircle) % fullCircle;
+        let boundary = 0;
+
+        for (let index = 0; index < holdings.length; index += 1) {
+          const holding = holdings[index];
+          boundary += (holding.allocation / 100) * fullCircle;
+          if (angle <= boundary) return { holding, index };
+        }
+        return null;
+      }
+
+      function enableChartTooltip() {
+        const canvas = document.getElementById("allocationChart");
+        const panel = canvas.parentElement;
+        const tooltip = document.getElementById("chartTooltip");
+        const ticker = document.getElementById("tooltipTicker");
+        const allocation = document.getElementById("tooltipAllocation");
+
+        canvas.addEventListener("pointermove", (event) => {
+          const canvasRect = canvas.getBoundingClientRect();
+          const match = holdingAtPoint(
+            event.clientX - canvasRect.left,
+            event.clientY - canvasRect.top
+          );
+
+          if (!match) {
+            tooltip.hidden = true;
+            canvas.style.cursor = "default";
+            setHoveredSlice(-1);
+            return;
+          }
+
+          const panelRect = panel.getBoundingClientRect();
+          const { holding, index } = match;
+          setHoveredSlice(index);
+          ticker.textContent = holding.ticker || "Cash";
+          allocation.textContent = `${holding.allocation.toFixed(2)}%`;
+          tooltip.style.left = `${event.clientX - panelRect.left}px`;
+          tooltip.style.top = `${event.clientY - panelRect.top}px`;
+          tooltip.hidden = false;
+          canvas.style.cursor = "crosshair";
+        });
+
+        canvas.addEventListener("pointerleave", () => {
+          tooltip.hidden = true;
+          canvas.style.cursor = "default";
+          setHoveredSlice(-1);
+        });
+      }
+
+      function buildLegend() {
+        const legend = document.getElementById("chartLegend");
+        legend.replaceChildren(...holdings.map((holding, index) => {
+          const item = document.createElement("div");
+          item.className = "legend-item";
+          item.title = `${holding.asset}: ${holding.allocation.toFixed(2)}%`;
+          item.addEventListener("pointerenter", () => setHoveredSlice(index));
+          item.addEventListener("pointerleave", () => setHoveredSlice(-1));
+
+          const swatch = document.createElement("span");
+          swatch.className = "legend-swatch";
+          swatch.style.background = palette[index % palette.length];
+
+          const copy = document.createElement("span");
+          copy.className = "legend-copy";
+          const ticker = document.createElement("strong");
+          ticker.className = "legend-ticker";
+          ticker.textContent = holding.ticker || "Cash";
+          const name = document.createElement("span");
+          name.className = "legend-name";
+          name.textContent = holding.asset;
+          copy.append(ticker, name);
+
+          const value = document.createElement("strong");
+          value.className = "legend-value";
+          value.textContent = `${holding.allocation.toFixed(2)}%`;
+
+          item.append(swatch, copy, value);
+          return item;
+        }));
+      }
+
+      function enableAllocationCalculator() {
+        const modeSelect = document.getElementById("calculatorMode");
+        const amountInput = document.getElementById("calculatorAmount");
+        const amountLabel = document.getElementById("calculatorAmountLabel");
+        const calculatorTitle = document.getElementById("calculatorTitle");
+        const calculatorDescription = document.getElementById("calculatorDescription");
+        const columnLabel = document.getElementById("amountColumnLabel");
+        const resultCells = document.querySelectorAll("[data-result-allocation]");
+
+        function update() {
+          const isRebalancing = modeSelect.value === "rebalance";
+          const total = Math.max(0, Number(amountInput.value) || 0);
+
+          amountLabel.textContent = isRebalancing ? "Total account value" : "Monthly deposit amount";
+          calculatorTitle.textContent = isRebalancing
+            ? "Rebalance your portfolio."
+            : "Plan your monthly deposit.";
+          calculatorDescription.textContent = isRebalancing
+            ? "See the target value each investment should hold based on your total account balance."
+            : "See how much of your monthly contribution to direct toward each investment.";
+          columnLabel.textContent = isRebalancing ? "Target balance" : "Monthly deposit";
+
+          resultCells.forEach((cell) => {
+            cell.classList.toggle("rebalance", isRebalancing);
+            cell.textContent = money.format(
+              total * Number(cell.dataset.resultAllocation) / 100
+            );
+          });
+        }
+
+        modeSelect.addEventListener("change", update);
+        amountInput.addEventListener("input", update);
+        update();
+      }
+
+      drawChart();
+      buildLegend();
+      enableChartTooltip();
+      enableAllocationCalculator();
+
+      let resizeTimer;
+      window.addEventListener("resize", () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(drawChart, 100);
+      });
+    </script>
+  {% endif %}
+{% endblock %}

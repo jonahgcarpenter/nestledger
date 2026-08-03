@@ -1,4 +1,4 @@
-{% extends "spending_base.html" %}
+{% extends "base.html" %}
 {% block title %}Bulk Import Results{% endblock %}
 {% block content %}
   <p class="eyebrow">Bulk statement import</p>
@@ -15,7 +15,7 @@
             <td>
               {% if result.status == "imported" %}<span class="tag">Draft</span>
               {% elif result.status == "duplicate" %}<span class="tag">Duplicate</span>
-              {% else %}<span class="tag" style="color: var(--red)">Error</span>{% endif %}
+              {% else %}<span class="tag error-tag">Error</span>{% endif %}
             </td>
             <td class="muted">{% if result.issuer %}{{ result.issuer }}: {% endif %}{{ result.message }}</td>
             <td>{% if result.import_id %}<a class="button" href="{{ url_for('review_import', import_id=result.import_id) }}">{{ "Review" if result.status == "imported" else "Open" }}</a>{% endif %}</td>
@@ -24,7 +24,7 @@
       </tbody>
     </table>
   </div>
-  <div class="actions" style="margin-top: 1rem">
+  <div class="actions actions-offset">
     <a class="button primary" href="{{ url_for('import_statement_pdf') }}">Import more</a>
     <a class="button" href="{{ url_for('spending') }}">Statement history</a>
   </div>

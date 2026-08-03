@@ -39,9 +39,50 @@ class AppFlowTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_spending_pages_load(self):
-        for path in ("/spending", "/spending/import", "/spending/filters"):
+        for path in (
+            "/ira/strategies/low_risk",
+            "/spending/analyzer",
+            "/spending/statements",
+            "/spending/filters",
+        ):
             with self.subTest(path):
-                self.assertEqual(self.client.get(path).status_code, 200)
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(b"Personal Finance Lab", response.data)
+                self.assertNotIn(b'class="brand"', response.data)
+                self.assertIn(b'href="/ira/strategies"', response.data)
+                self.assertIn(b'href="/spending/analyzer"', response.data)
+                self.assertIn(b'href="/spending/statements"', response.data)
+                self.assertIn(b'href="/spending/filters"', response.data)
+                self.assertIn(b">Analyzer</a>", response.data)
+                self.assertIn(b'class="nav-dropdown"', response.data)
+                self.assertIn(b'href="/ira/strategies/low_risk"', response.data)
+                self.assertIn(b'href="/ira/strategies/medium_risk"', response.data)
+                self.assertIn(b'href="/ira/strategies/high_risk"', response.data)
+
+        statements_page = self.client.get("/spending/statements").data
+        self.assertIn(b'id="statementDropZone"', statements_page)
+        self.assertIn(b"Drop statement PDFs here", statements_page)
+        self.assertIn(b"multiple required", statements_page)
+
+    def test_section_templates_extend_shared_base(self):
+        root = Path(__file__).resolve().parents[1]
+        templates = root / "templates"
+        page_templates = (
+            templates / "ira_strategies" / "index.html",
+            templates / "spending" / "index.html",
+            templates / "spending" / "filters.html",
+            templates / "spending" / "statements" / "import.html",
+            templates / "spending" / "statements" / "review.html",
+            templates / "spending" / "statements" / "results.html",
+        )
+        for template in page_templates:
+            with self.subTest(template=template):
+                self.assertTrue(template.read_text().startswith('{% extends "base.html" %}'))
+        self.assertFalse((templates / "index.html").exists())
+        strategy_page = self.client.get("/ira/strategies/low_risk").data
+        self.assertIn(b'href="/static/app.css"', strategy_page)
+        self.assertIn(b'href="/static/ira_strategies.css"', strategy_page)
 
     @patch("app.parse_statement")
     @patch("app.extract_pdf_text")
@@ -68,7 +109,7 @@ class AppFlowTests(unittest.TestCase):
         )
         payload = b"%PDF-1.7\nsynthetic"
         response = self.client.post(
-            "/spending/import",
+            "/spending/statements",
             data={
                 "csrf_token": self.csrf,
                 "statement": (io.BytesIO(payload), "statement.pdf"),
@@ -86,7 +127,7 @@ class AppFlowTests(unittest.TestCase):
         self.assertIn(b"SAMPLE GROCERY", review.data)
         self.assertIn(b"View original PDF", review.data)
 
-        pdf_response = self.client.get(review_path + "/statement.pdf")
+        pdf_response = self.client.get(review_path + "/pdf")
         self.assertEqual(pdf_response.status_code, 200)
         self.assertEqual(pdf_response.data, payload)
         self.assertEqual(pdf_response.mimetype, "application/pdf")
@@ -121,15 +162,19 @@ class AppFlowTests(unittest.TestCase):
                 "csrf_token": self.csrf,
             },
         )
-        self.assertEqual(response.headers["Location"], "/spending")
-        spending_page = self.client.get("/spending").data
+        self.assertEqual(response.headers["Location"], "/spending/analyzer")
+        spending_page = self.client.get("/spending/analyzer").data
         self.assertIn(b"Sample Grocery", spending_page)
         self.assertNotIn(b"Autopay Payment", spending_page)
         self.assertIn(b'id="categoryChart"', spending_page)
         self.assertIn(b'"name": "Groceries"', spending_page)
+        self.assertNotIn(b"Statement history", spending_page)
+        statements_page = self.client.get("/spending/statements").data
+        self.assertIn(b"Previous submissions", statements_page)
+        self.assertIn(b"statement.pdf", statements_page)
 
         duplicate = self.client.post(
-            "/spending/import",
+            "/spending/statements",
             data={
                 "csrf_token": self.csrf,
                 "statement": (io.BytesIO(payload), "again.pdf"),
@@ -137,14 +182,14 @@ class AppFlowTests(unittest.TestCase):
             content_type="multipart/form-data",
         )
         self.assertEqual(duplicate.status_code, 302)
-        self.assertIn("/spending/import/", duplicate.headers["Location"])
+        self.assertIn("/spending/statements/", duplicate.headers["Location"])
         self.assertEqual(list(archived.parent.glob("*.pdf")), [archived])
 
         deleted = self.client.post(
             review_path + "/delete",
             data={"csrf_token": self.csrf},
         )
-        self.assertEqual(deleted.headers["Location"], "/spending")
+        self.assertEqual(deleted.headers["Location"], "/spending/analyzer")
         self.assertFalse(archived.exists())
         with application.app.app_context():
             self.assertEqual(database.list_imports(), [])
@@ -155,7 +200,7 @@ class AppFlowTests(unittest.TestCase):
         payload = b"%PDF-1.7\nunreadable"
         digest = hashlib.sha256(payload).hexdigest()
         response = self.client.post(
-            "/spending/import",
+            "/spending/statements",
             data={
                 "csrf_token": self.csrf,
                 "statement": (io.BytesIO(payload), "bad.pdf"),
@@ -186,7 +231,7 @@ class AppFlowTests(unittest.TestCase):
             ],
         )
         response = self.client.post(
-            "/spending/import",
+            "/spending/statements",
             data={
                 "csrf_token": self.csrf,
                 "statements": [
@@ -263,7 +308,7 @@ class AppFlowTests(unittest.TestCase):
 
     def test_category_management(self):
         self.client.post(
-            "/spending/categories",
+            "/spending/filters/categories",
             data={"name": "Education", "csrf_token": self.csrf},
         )
         with application.app.app_context():
@@ -271,13 +316,13 @@ class AppFlowTests(unittest.TestCase):
                 row for row in database.list_categories() if row["name"] == "Education"
             )
         self.client.post(
-            f"/spending/categories/{category['id']}/update",
+            f"/spending/filters/categories/{category['id']}/update",
             data={"name": "Learning", "csrf_token": self.csrf},
         )
         response = self.client.get("/spending/filters")
         self.assertIn(b"Learning", response.data)
         self.client.post(
-            f"/spending/categories/{category['id']}/delete",
+            f"/spending/filters/categories/{category['id']}/delete",
             data={"csrf_token": self.csrf},
         )
         with application.app.app_context():
