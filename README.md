@@ -1,26 +1,85 @@
-# IRA Strategys
+# NestLedger
 
-A personal Flask app that loads CSV-formatted portfolio strategies from `strategies/` and simplifies monthly contribution planning and portfolio rebalancing.
+NestLedger is a local Flask application for IRA allocation planning and
+credit-card spending analysis. It imports statement PDFs, extracts transactions
+locally, applies reusable merchant filters, and stores the reviewed ledger in
+SQLite.
+
+Supported statement issuers:
+
+- Chase
+- Capital One
+- Discover
+- Apple Card / Goldman Sachs
+- American Express
+
+## System Requirements
+
+- Python 3.10 or newer
+- Poppler (`pdftotext` and `pdftoppm`)
+- Tesseract with English language data for scanned PDFs
+
+On Arch Linux:
+
+```bash
+sudo pacman -S --needed poppler tesseract tesseract-data-eng
+```
+
+On Debian or Ubuntu:
+
+```bash
+sudo apt install poppler-utils tesseract-ocr tesseract-ocr-eng
+```
+
+PDFs with embedded text only require Poppler. Tesseract is invoked only when
+embedded text does not contain recognizable transaction rows. No statement
+content is sent to an external service.
 
 ## Run
 
 ```bash
-# Create the virtual enviornment
 python -m venv .venv
-
-# Activate it
 source .venv/bin/activate
-
-# Install dependancies
 pip install -r requirements.txt
-
-# Start flask server
 python app.py
 ```
 
-Open `http://127.0.0.1:5000` in a browser.
+Open `http://127.0.0.1:5000`
 
-## Add A Portfolio
+## Docker
+
+Build the image:
+
+```bash
+docker build -t nestledger .
+```
+
+Run it with a persistent named volume for the SQLite database and uploaded statements:
+
+```bash
+docker run --rm \
+  --name nestledger \
+  -p 8000:8000 \
+  -e SECRET_KEY="$(openssl rand -hex 32)" \
+  -v nestledger-data:/app/instance \
+  nestledger
+```
+
+Open `http://127.0.0.1:8000`
+
+## Tests
+
+```bash
+python -m unittest discover -v
+```
+
+Tests use synthetic statement text and do not contain personal or card data.
+
+## Spending Analyzer
+
+Importing a credit-card statement creates a draft of its transactions for review and categorization. Merchant filters can automatically assign categories, exclude payments, and remember decisions for future statements. Once confirmed, transactions become available in the spending analyzer, where they can be filtered by card, merchant, category, and date to understand spending patterns.
+
+## Add An IRA Portfolio
 
 Place a `.csv` file in `strategies/` with this format:
 
@@ -31,4 +90,5 @@ High risk,US stocks,Vanguard Russell 1000 Growth ETF,VONG,18.00%
 High risk,Total,,,100.00%
 ```
 
-Allocations excluding the optional `Total` row must add up to 100%. The strategy appears in the navbar automatically.
+Allocations excluding the optional `Total` row must add up to 100%. The
+strategy appears in the strategy switcher automatically.

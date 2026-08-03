@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Review Import{% endblock %}
+{% block content %}
+  <p class="eyebrow">{{ "Imported statement" if imported.status == "confirmed" else "Review before saving" }}</p>
+  <h1>{{ imported.issuer }}</h1>
+  <div class="import-meta">
+    <span class="tag">{{ imported.filename }}</span><span class="tag">{{ imported.extraction_method|upper }}</span><span class="tag">{{ imported.statement_start or "Unknown start" }} to {{ imported.statement_end or "Unknown end" }}</span><span class="tag">{{ transactions|length }} rows</span>
+  </div>
+  {% if pdf_available %}
+    <div class="actions actions-leading"><a class="button" href="{{ url_for('view_statement_pdf', import_id=imported.id) }}" target="_blank" rel="noopener">View original PDF</a></div>
+  {% else %}
+    <p class="hint">The original PDF is unavailable. This can occur for imports created before PDF archiving was enabled.</p>
+  {% endif %}
+  {% if warnings %}<ul class="warnings">{% for warning in warnings[:8] %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
+  {% if imported.status == "draft" %}<p class="lede">Rows shaded in coral need attention. Correct the merchant, date, amount, or category. Remember a merchant to create an exact category/exclusion filter for future imports.</p>{% else %}<p class="lede">Correct transaction details, categories, and exclusion options at any time. Saved changes update the spending analyzer immediately.</p>{% endif %}
+
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="statement-card-field">
+      <label for="card_name">Card name</label>
+      <input id="card_name" name="card_name" value="{{ imported.card_name or '' }}" maxlength="100" placeholder="Chase Sapphire Preferred" required>
+      <p class="hint">Use the name you want shown in statement history.</p>
+    </div>
+    <div class="panel table-wrap">
+      <table class="review-grid">
+        <thead><tr><th>Date</th><th>Merchant</th><th>Original statement text</th><th>Category</th><th>Amount</th><th>Options</th></tr></thead>
+        <tbody>
+          {% for row in transactions %}
+            {% set prefix = "transaction-" ~ row.id ~ "-" %}
+            <tr{% if row.needs_review %} class="review-row"{% endif %}>
+              <td><input name="{{ prefix }}date" type="date" value="{{ row.transaction_date or '' }}"></td>
+              <td><input name="{{ prefix }}merchant" value="{{ row.merchant }}"></td>
+              <td class="muted">{{ row.original_description }}</td>
+              <td><select name="{{ prefix }}category"><option value="">Uncategorized</option>{% for category in categories %}<option value="{{ category.id }}"{% if row.category_id == category.id %} selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></td>
+              <td><input name="{{ prefix }}amount" inputmode="decimal" value="{{ '%.2f'|format(row.amount_cents / 100) }}"></td>
+              <td><label class="check"><input name="{{ prefix }}excluded" type="checkbox"{% if row.excluded %} checked{% endif %}> Exclude</label><label class="check"><input name="{{ prefix }}save-rule" type="checkbox"> Remember merchant</label></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="review-actions actions-offset">
+      <a class="button" href="{{ url_for('import_statement_pdf') }}">Back</a>
+      <div class="actions">
+        {% if imported.status == "draft" %}<button class="button" name="action" value="save" type="submit" formnovalidate>Save draft</button><button class="button primary" name="action" value="confirm" type="submit">Confirm import</button>{% else %}<button class="button primary" name="action" value="save" type="submit">Save changes</button>{% endif %}
+        <button class="button danger" type="submit" form="delete-import" name="delete" value="1">Delete import</button>
+      </div>
+    </div>
+  </form>
+  <form id="delete-import" action="{{ url_for('remove_import', import_id=imported.id) }}" method="post" onsubmit="return confirm('Delete this import and all of its transactions?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
+{% endblock %}

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Filters & Categories{% endblock %}
+{% block content %}
+  <section class="section">
+    <div class="section-head"><div><p class="eyebrow">Automatic filters</p><h2>Add a filter</h2></div></div>
+    <form class="panel form-grid rule-form" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div><label for="pattern">Merchant pattern</label><input id="pattern" name="pattern" required placeholder="sample grocery"></div>
+      <div><label for="match_type">Match</label><select id="match_type" name="match_type"><option value="contains">Contains</option><option value="exact">Exact</option></select></div>
+      <div><label for="category_id">Category</label><select id="category_id" name="category_id"><option value="">No category change</option>{% for category in categories %}<option value="{{ category.id }}">{{ category.name }}</option>{% endfor %}</select></div>
+      <div><label for="excluded">Exclude</label><select id="excluded" name="excluded"><option value="no" selected>No</option><option value="yes">Yes</option></select></div>
+      <button class="button primary" type="submit">Save filter</button>
+    </form>
+
+    <div class="panel table-wrap panel-offset">
+      <table><thead><tr><th>Pattern</th><th>Match</th><th>Category</th><th>Excluded</th><th></th></tr></thead><tbody>
+        {% for filter in filters %}
+          <tr><td class="merchant">{{ filter.pattern }}</td><td>{{ filter.match_type }}</td><td>{{ filter.category_name or "No change" }}</td><td>{{ "Yes" if filter.excluded else "No" }}</td><td><form action="{{ url_for('remove_filter', filter_id=filter.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button danger" type="submit">Delete</button></form></td></tr>
+        {% else %}<tr><td class="empty" colspan="5">No filters yet. New imports will remain uncategorized until filters are configured.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-head"><div><p class="eyebrow">Category set</p><h2>Manage categories</h2></div></div>
+    <form class="panel form-grid category-form" action="{{ url_for('add_category') }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div><label for="category_name">New category</label><input id="category_name" name="name" required placeholder="Education"></div>
+      <button class="button primary" type="submit">Add category</button>
+    </form>
+    <div class="panel table-wrap panel-offset">
+      <table><thead><tr><th>Category</th><th>Actions</th></tr></thead><tbody>
+        {% for category in categories %}
+          <tr data-category-row>
+            <td class="merchant"><span class="category-name" data-category-name>{{ category.name }}</span><input class="category-name-input" name="name" value="{{ category.name }}" form="rename-category-{{ category.id }}" required hidden data-category-input></td>
+            <td><div class="actions"><form id="rename-category-{{ category.id }}" action="{{ url_for('rename_category', category_id=category.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button" type="button" data-category-rename>Rename</button><button class="button primary" type="submit" hidden data-category-save>Save</button><button class="button" type="button" hidden data-category-cancel>Cancel</button></form><form action="{{ url_for('remove_category', category_id=category.id) }}" method="post" onsubmit="return confirm('Delete this category and its filters?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button danger" type="submit">Delete</button></form></div></td>
+          </tr>
+        {% else %}<tr><td class="empty" colspan="2">No categories. Add one to begin categorizing transactions.</td></tr>{% endfor %}
+      </tbody></table>
+    </div>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script>
+  document.querySelectorAll("[data-category-row]").forEach((row) => {
+    const name = row.querySelector("[data-category-name]");
+    const input = row.querySelector("[data-category-input]");
+    const rename = row.querySelector("[data-category-rename]");
+    const save = row.querySelector("[data-category-save]");
+    const cancel = row.querySelector("[data-category-cancel]");
+
+    function setEditing(editing) {
+      name.hidden = editing;
+      input.hidden = !editing;
+      rename.hidden = editing;
+      save.hidden = !editing;
+      cancel.hidden = !editing;
+      if (editing) {
+        input.focus();
+        input.select();
+      }
+    }
+
+    rename.addEventListener("click", () => setEditing(true));
+    cancel.addEventListener("click", () => {
+      input.value = name.textContent.trim();
+      setEditing(false);
+    });
+  });
+</script>
+{% endblock %}

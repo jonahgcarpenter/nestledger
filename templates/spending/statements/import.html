@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Import Statement{% endblock %}
+{% block content %}
+  <p class="eyebrow">Local statement import</p>
+  <h2>Import Statements.</h2>
+  <p class="lede">Upload a Chase, Capital One, Discover, Apple Card, or American Express PDF.</p>
+  <form class="panel upload" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="statements">Credit card statement PDFs</label>
+    <label id="statementDropZone" class="drop-zone" for="statements" tabindex="0">
+      <input class="file-input" id="statements" name="statements" type="file" accept="application/pdf,.pdf" multiple required>
+      <strong>Drop statement PDFs here</strong>
+      <span>or click to choose files</span>
+      <span id="selectedStatements" class="selected-files">No files selected</span>
+    </label>
+    {% if not tools.pdftotext or not tools.pdftoppm or not tools.tesseract %}
+      <div class="flash error">
+        Missing local tools:
+        {% if not tools.pdftotext %}<code>pdftotext</code> {% endif %}
+        {% if not tools.pdftoppm %}<code>pdftoppm</code> {% endif %}
+        {% if not tools.tesseract %}<code>tesseract</code>{% endif %}.
+        On Arch, run <code>sudo pacman -S --needed poppler tesseract tesseract-data-eng</code>.
+      </div>
+    {% endif %}
+    <div class="upload-footer">
+      <p class="hint">Select one or more PDFs. Maximum file size: 16 MB each and 128 MB combined. PDFs are removed if extraction fails.</p>
+      <button class="button primary" type="submit">Extract statements</button>
+    </div>
+  </form>
+
+  <section class="section">
+    <div class="section-head">
+      <div><p class="eyebrow">Previous submissions</p><h2>Statement history</h2></div>
+    </div>
+    <div class="panel table-wrap">
+      <table>
+        <thead><tr><th>Card Name</th><th>Issuer</th><th>Period</th><th>Status</th><th>Original</th></tr></thead>
+        <tbody>
+          {% for item in imports %}
+            <tr><td><a href="{{ url_for('review_import', import_id=item.id) }}">{{ item.card_name or "Unnamed card" }}</a></td><td>{{ item.issuer }}</td><td>{{ item.statement_start or "?" }} to {{ item.statement_end or "?" }}</td><td>{{ item.status }}</td><td>{% if item.id in available_import_ids %}<a href="{{ url_for('view_statement_pdf', import_id=item.id) }}" target="_blank" rel="noopener">View PDF</a>{% else %}<span class="muted">Unavailable</span>{% endif %}</td></tr>
+          {% else %}
+            <tr><td class="empty" colspan="5">No statements have been submitted yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const fileInput = document.getElementById("statements");
+  const dropZone = document.getElementById("statementDropZone");
+  const selectedFiles = document.getElementById("selectedStatements");
+  let dragDepth = 0;
+
+  function showSelectedFiles() {
+    const files = Array.from(fileInput.files);
+    selectedFiles.textContent = files.length
+      ? files.map(file => file.name).join(", ")
+      : "No files selected";
+  }
+
+  fileInput.addEventListener("change", showSelectedFiles);
+  dropZone.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      fileInput.click();
+    }
+  });
+  dropZone.addEventListener("dragenter", event => {
+    event.preventDefault();
+    dragDepth += 1;
+    dropZone.classList.add("dragging");
+  });
+  dropZone.addEventListener("dragover", event => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  });
+  dropZone.addEventListener("dragleave", () => {
+    dragDepth -= 1;
+    if (dragDepth <= 0) {
+      dragDepth = 0;
+      dropZone.classList.remove("dragging");
+    }
+  });
+  dropZone.addEventListener("drop", event => {
+    event.preventDefault();
+    dragDepth = 0;
+    dropZone.classList.remove("dragging");
+    if (event.dataTransfer.files.length) {
+      fileInput.files = event.dataTransfer.files;
+      showSelectedFiles();
+    }
+  });
+</script>
+{% endblock %}
