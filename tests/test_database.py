@@ -47,10 +47,16 @@ class DatabaseTests(unittest.TestCase):
                     "excluded": True,
                 },
             ],
+            card_name="Chase Sapphire",
             issuer="Chase",
         )
         self.assertEqual(database.get_import(import_id)["status"], "draft")
         self.assertTrue(database.confirm_import(import_id))
+        self.assertEqual(database.list_card_names(), ["Chase Sapphire"])
+        self.assertEqual(
+            len(database.list_transactions(card_name="Chase Sapphire")), 2
+        )
+        self.assertEqual(database.list_transactions(card_name="Another Card"), [])
         summary = database.transaction_summary()
         self.assertEqual([(row["category"], row["amount_cents"]) for row in summary], [("Shopping", 2500)])
 

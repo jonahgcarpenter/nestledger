@@ -126,6 +126,7 @@ class AppFlowTests(unittest.TestCase):
         review = self.client.get(review_path)
         self.assertIn(b"SAMPLE GROCERY", review.data)
         self.assertIn(b"View original PDF", review.data)
+        self.assertIn(b'name="card_name"', review.data)
 
         pdf_response = self.client.get(review_path + "/pdf")
         self.assertEqual(pdf_response.status_code, 200)
@@ -158,6 +159,7 @@ class AppFlowTests(unittest.TestCase):
                 payment_prefix + "merchant": "Autopay Payment",
                 payment_prefix + "amount": "-25.50",
                 payment_prefix + "excluded": "on",
+                "card_name": "Chase Freedom",
                 "action": "confirm",
                 "csrf_token": self.csrf,
             },
@@ -169,13 +171,23 @@ class AppFlowTests(unittest.TestCase):
         self.assertIn(b'id="categoryChart"', spending_page)
         self.assertIn(b'"name": "Groceries"', spending_page)
         self.assertIn(b'id="transactionFilters"', spending_page)
+        self.assertIn(b"<th>Card</th>", spending_page)
+        self.assertIn(b"Chase Freedom", spending_page)
+        self.assertIn(b'name="card"', spending_page)
         self.assertIn(b'action="/spending/analyzer#confirmed-activity"', spending_page)
         self.assertIn(b"transactionFilters.requestSubmit()", spending_page)
         self.assertNotIn(b"Apply filters", spending_page)
         self.assertNotIn(b"Statement history", spending_page)
+        filtered_page = self.client.get(
+            "/spending/analyzer?card=Chase+Freedom"
+        ).data
+        self.assertIn(b'<option value="Chase Freedom" selected>', filtered_page)
+        self.assertIn(b"Sample Grocery", filtered_page)
         statements_page = self.client.get("/spending/statements").data
         self.assertIn(b"Previous submissions", statements_page)
-        self.assertIn(b"statement.pdf", statements_page)
+        self.assertIn(b"Card Name", statements_page)
+        self.assertIn(b"Chase Freedom", statements_page)
+        self.assertNotIn(b">statement.pdf<", statements_page)
 
         confirmed_review = self.client.get(review_path).data
         self.assertIn(b"Save changes", confirmed_review)
@@ -196,6 +208,7 @@ class AppFlowTests(unittest.TestCase):
                 payment_prefix + "merchant": "Autopay Payment",
                 payment_prefix + "amount": "-25.50",
                 payment_prefix + "excluded": "on",
+                "card_name": "Chase Freedom Unlimited",
                 "action": "save",
                 "csrf_token": self.csrf,
             },
@@ -207,6 +220,7 @@ class AppFlowTests(unittest.TestCase):
             self.assertEqual(corrected["merchant"], "Corrected Merchant")
             self.assertEqual(corrected["amount_cents"], 3000)
             self.assertEqual(corrected["category_id"], shopping_id)
+            self.assertEqual(database.get_import(transaction["import_id"])["card_name"], "Chase Freedom Unlimited")
 
         duplicate = self.client.post(
             "/spending/statements",
@@ -341,6 +355,33 @@ class AppFlowTests(unittest.TestCase):
     def test_post_requires_csrf_token(self):
         response = self.client.post("/spending/filters", data={})
         self.assertEqual(response.status_code, 400)
+
+    def test_confirmation_requires_card_name(self):
+        with application.app.app_context():
+            import_id = database.create_import("d" * 64, "statement.pdf")
+        review_path = f"/spending/statements/{import_id}"
+
+        response = self.client.post(
+            review_path,
+            data={"action": "confirm", "csrf_token": self.csrf},
+        )
+        self.assertEqual(response.headers["Location"], review_path)
+        with application.app.app_context():
+            self.assertEqual(database.get_import(import_id)["status"], "draft")
+
+        response = self.client.post(
+            review_path,
+            data={
+                "card_name": "Amex Gold",
+                "action": "confirm",
+                "csrf_token": self.csrf,
+            },
+        )
+        self.assertEqual(response.headers["Location"], "/spending/analyzer")
+        with application.app.app_context():
+            imported = database.get_import(import_id)
+            self.assertEqual(imported["card_name"], "Amex Gold")
+            self.assertEqual(imported["status"], "confirmed")
 
     def test_category_management(self):
         self.client.post(

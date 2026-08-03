@@ -361,6 +361,7 @@ def strategy(slug):
 def spending():
     category_id = request.args.get("category", type=int)
     query = request.args.get("q", "").strip()
+    card_name = request.args.get("card", "").strip()
     date_from = request.args.get("from", "").strip()
     date_to = request.args.get("to", "").strip()
     transactions = database.list_transactions(
@@ -368,6 +369,7 @@ def spending():
         category_id=category_id,
         include_excluded=False,
         query=query or None,
+        card_name=card_name or None,
         date_from=date_from or None,
         date_to=date_to or None,
     )
@@ -385,9 +387,11 @@ def spending():
         transactions=transactions,
         category_chart=category_chart,
         categories=database.list_categories(),
+        card_names=database.list_card_names(),
         filters={
             "category": category_id,
             "q": query,
+            "card": card_name,
             "from": date_from,
             "to": date_to,
         },
@@ -444,6 +448,10 @@ def review_import(import_id):
     if request.method == "POST":
         updates = []
         errors = []
+        action = request.form.get("action")
+        card_name = request.form.get("card_name", "").strip()
+        if not card_name and (action == "confirm" or imported["status"] == "confirmed"):
+            errors.append("Enter a card name before confirming the statement.")
         category_ids = {row["id"] for row in categories}
         for transaction in transactions:
             prefix = f"transaction-{transaction['id']}-"
@@ -478,6 +486,12 @@ def review_import(import_id):
             )
         db = database.get_db()
         with db:
+            if card_name or imported["status"] == "draft":
+                db.execute(
+                    """UPDATE imports SET card_name = ?, updated_at = CURRENT_TIMESTAMP
+                       WHERE id = ?""",
+                    (card_name or None, import_id),
+                )
             for row in updates:
                 transaction_id, tx_date, merchant, normalized, cents, category_id, excluded, save_rule = row
                 db.execute(
@@ -503,7 +517,7 @@ def review_import(import_id):
                 flash(error, "error")
             flash("Valid rows were saved. Correct the highlighted row and try again.", "info")
             return redirect(url_for("review_import", import_id=import_id))
-        if request.form.get("action") == "confirm" and imported["status"] == "draft":
+        if action == "confirm" and imported["status"] == "draft":
             database.confirm_import(import_id)
             flash("Statement imported successfully.", "success")
             return redirect(url_for("spending"))

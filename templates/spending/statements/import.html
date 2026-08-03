@@ -34,10 +34,10 @@
     </div>
     <div class="panel table-wrap">
       <table>
-        <thead><tr><th>File</th><th>Issuer</th><th>Period</th><th>Status</th><th>Original</th></tr></thead>
+        <thead><tr><th>Card Name</th><th>Issuer</th><th>Period</th><th>Status</th><th>Original</th></tr></thead>
         <tbody>
           {% for item in imports %}
-            <tr><td><a href="{{ url_for('review_import', import_id=item.id) }}">{{ item.filename }}</a></td><td>{{ item.issuer }}</td><td>{{ item.statement_start or "?" }} to {{ item.statement_end or "?" }}</td><td>{{ item.status }}</td><td>{% if item.id in available_import_ids %}<a href="{{ url_for('view_statement_pdf', import_id=item.id) }}" target="_blank" rel="noopener">View PDF</a>{% else %}<span class="muted">Unavailable</span>{% endif %}</td></tr>
+            <tr><td><a href="{{ url_for('review_import', import_id=item.id) }}">{{ item.card_name or "Unnamed card" }}</a></td><td>{{ item.issuer }}</td><td>{{ item.statement_start or "?" }} to {{ item.statement_end or "?" }}</td><td>{{ item.status }}</td><td>{% if item.id in available_import_ids %}<a href="{{ url_for('view_statement_pdf', import_id=item.id) }}" target="_blank" rel="noopener">View PDF</a>{% else %}<span class="muted">Unavailable</span>{% endif %}</td></tr>
           {% else %}
             <tr><td class="empty" colspan="5">No statements have been submitted yet.</td></tr>
           {% endfor %}

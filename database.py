@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS imports (
     id INTEGER PRIMARY KEY,
     content_sha256 TEXT NOT NULL UNIQUE CHECK(length(content_sha256) = 64),
     filename TEXT NOT NULL,
+    card_name TEXT,
     issuer TEXT,
     statement_start TEXT,
     statement_end TEXT,
@@ -135,6 +136,7 @@ def close_db(_error=None):
 def init_db():
     db = get_db()
     db.executescript(SCHEMA)
+    _migrate_imports(db)
     _migrate_filters(db)
     if db.execute(
         "SELECT 1 FROM app_metadata WHERE key = 'defaults_seeded'"
@@ -153,6 +155,12 @@ def init_db():
             "INSERT INTO app_metadata(key, value) VALUES ('defaults_seeded', '1')"
         )
     db.commit()
+
+
+def _migrate_imports(db):
+    columns = db.execute("PRAGMA table_info(imports)").fetchall()
+    if not any(row["name"] == "card_name" for row in columns):
+        db.execute("ALTER TABLE imports ADD COLUMN card_name TEXT")
 
 
 def _migrate_filters(db):
@@ -257,6 +265,23 @@ def list_imports(status=None):
     return get_db().execute(sql + " ORDER BY created_at DESC, id DESC", params).fetchall()
 
 
+def list_card_names(status="confirmed"):
+    clauses = ["card_name IS NOT NULL", "trim(card_name) != ''"]
+    params = []
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status)
+    return [
+        row["card_name"]
+        for row in get_db().execute(
+            "SELECT DISTINCT card_name FROM imports WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY card_name COLLATE NOCASE",
+            params,
+        ).fetchall()
+    ]
+
+
 def _warnings_json(warnings):
     if warnings is None:
         return "[]"
@@ -303,6 +328,7 @@ def create_import(
     filename,
     transactions=(),
     *,
+    card_name=None,
     issuer=None,
     statement_start=None,
     statement_end=None,
@@ -315,13 +341,14 @@ def create_import(
     with db:
         cursor = db.execute(
             """INSERT INTO imports (
-                   content_sha256, filename, issuer, statement_start, statement_end,
+                   content_sha256, filename, card_name, issuer, statement_start, statement_end,
                    extraction_method, status, warnings, confirmed_at
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'confirmed'
-                   THEN CURRENT_TIMESTAMP END)""",
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'confirmed'
+                    THEN CURRENT_TIMESTAMP END)""",
             (
                 content_sha256,
                 filename,
+                card_name,
                 issuer,
                 statement_start,
                 statement_end,
@@ -407,7 +434,7 @@ def update_transaction(transaction_id, **changes):
 
 def list_transactions(
     *, import_id=None, status=None, category_id=None, include_excluded=True,
-    query=None, date_from=None, date_to=None
+    query=None, card_name=None, date_from=None, date_to=None
 ):
     clauses = []
     params = []
@@ -425,6 +452,9 @@ def list_transactions(
     if query:
         clauses.append("(t.merchant LIKE ? OR t.original_description LIKE ?)")
         params.extend((f"%{query}%", f"%{query}%"))
+    if card_name:
+        clauses.append("i.card_name = ?")
+        params.append(card_name)
     if date_from:
         clauses.append("t.transaction_date >= ?")
         params.append(date_from)
@@ -433,7 +463,8 @@ def list_transactions(
         params.append(date_to)
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     return get_db().execute(
-        """SELECT t.*, c.name AS category_name, i.status AS import_status
+        """SELECT t.*, c.name AS category_name, i.status AS import_status,
+                  i.card_name AS card_name
            FROM transactions t
            JOIN imports i ON i.id = t.import_id
            LEFT JOIN categories c ON c.id = t.category_id"""
