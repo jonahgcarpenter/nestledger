@@ -48,8 +48,8 @@ class AppFlowTests(unittest.TestCase):
             with self.subTest(path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
-                self.assertIn(b"Personal Finance Lab", response.data)
-                self.assertNotIn(b'class="brand"', response.data)
+                self.assertIn(b"NestLedger", response.data)
+                self.assertIn(b'class="brand" href="/">NestLedger</a>', response.data)
                 self.assertIn(b'href="/ira/strategies"', response.data)
                 self.assertIn(b'href="/spending/analyzer"', response.data)
                 self.assertIn(b'href="/spending/statements"', response.data)

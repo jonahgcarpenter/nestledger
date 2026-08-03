@@ -1,8 +1,9 @@
-# Personal Finance Lab
+# NestLedger
 
-A local Flask application for IRA allocation planning and credit-card spending
-analysis. It imports statement PDFs, extracts transactions locally, applies
-reusable merchant filters, and stores the reviewed ledger in SQLite.
+NestLedger is a local Flask application for IRA allocation planning and
+credit-card spending analysis. It imports statement PDFs, extracts transactions
+locally, applies reusable merchant filters, and stores the reviewed ledger in
+SQLite.
 
 Supported statement issuers:
 
@@ -11,9 +12,6 @@ Supported statement issuers:
 - Discover
 - Apple Card / Goldman Sachs
 - American Express
-
-Issuer PDF layouts change over time. Every import opens as a draft so extracted
-dates, merchants, categories, and amounts can be checked before confirmation.
 
 ## System Requirements
 
@@ -46,57 +44,28 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Open `http://127.0.0.1:5000`. The application uses one shared navigation and
-four top-level sections:
+Open `http://127.0.0.1:5000`
 
-- `/ira/strategies` for IRA allocation strategies
-- `/spending/analyzer` for categorized activity and reporting
-- `/spending/statements` for statement uploads and review
-- `/spending/filters` for categories and automatic filters
+## Docker
 
-Page templates are grouped by application section under
-`templates/ira_strategies/` and `templates/spending/`. Every page extends the
-shared `templates/base.html` shell and navigation.
+Build the image:
 
-The SQLite database is created automatically at
-`instance/spending.sqlite3`. Successfully imported originals are retained under
-`instance/statements/` using their SHA-256 hashes and can be viewed from the
-review and import-history screens. Both locations are excluded from Git and
-restricted to the current user. Temporary OCR images are always deleted, and
-PDFs from failed imports are not retained. Exact duplicate PDFs are detected by
-SHA-256 hash.
+```bash
+docker build -t nestledger .
+```
 
-## Statement Workflow
+Run it with a persistent named volume for the SQLite database and uploaded statements:
 
-1. Upload one or more PDFs, up to 16 MB each and 128 MB combined.
-2. Review the detected issuer, statement period, warnings, and transactions.
-3. Correct uncertain rows highlighted in coral.
-4. Optionally select **Remember merchant** to create an exact category and/or
-   exclusion filter.
-5. Confirm the import to include it in spending summaries.
+```bash
+docker run --rm \
+  --name nestledger \
+  -p 8000:8000 \
+  -e SECRET_KEY="$(openssl rand -hex 32)" \
+  -v nestledger-data:/app/instance \
+  nestledger
+```
 
-Deleting an import also deletes its archived original PDF. Imports created
-before PDF archiving was enabled continue to work but cannot display an
-original.
-
-Card payments remain visible in the ledger when an exclusion filter matches
-them. Refunds and credits reduce the assigned category total.
-
-## Categories And Filters
-
-Categories and filters are managed from the **Filters** page. The initial
-database is seeded with a standard category set and editable default filters.
-After that one-time seed, deleting or renaming them is persistent.
-
-Fresh databases start with Groceries, Dining, Subscriptions,
-Bills & Utilities, Shopping, and Other. Payment filters are exclusion-only:
-they retain matching rows for reconciliation without assigning a category or
-including them in spending views.
-
-A filter can assign a category, exclude matching transactions from spending,
-or do both. Exact matches take priority, followed by longer `contains` matches.
-Creating a filter immediately applies it to matching stored transactions. The
-PDF parser only extracts statement facts and contains no categorization policy.
+Open `http://127.0.0.1:8000`
 
 ## Tests
 
@@ -105,6 +74,10 @@ python -m unittest discover -v
 ```
 
 Tests use synthetic statement text and do not contain personal or card data.
+
+## Spending Analyzer
+
+Importing a credit-card statement creates a draft of its transactions for review and categorization. Merchant filters can automatically assign categories, exclude payments, and remember decisions for future statements. Once confirmed, transactions become available in the spending analyzer, where they can be filtered by card, merchant, category, and date to understand spending patterns.
 
 ## Add An IRA Portfolio
 

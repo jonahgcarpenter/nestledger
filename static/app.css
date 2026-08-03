@@ -24,7 +24,9 @@ body {
 a { color: inherit; }
 button, input, select { font: inherit; }
 .shell { width: min(1180px, 90vw); margin: auto; padding: 1.2rem 0 6rem; }
-.nav { display: flex; align-items: center; justify-content: center; gap: 1rem; margin-bottom: 4rem; }
+.nav { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 4rem; }
+.brand { color: var(--ink); font-family: Georgia, serif; font-size: 1.45rem; font-weight: 600; letter-spacing: -.02em; text-decoration: none; }
+.brand:hover { color: var(--green); }
 .nav-links { display: flex; align-items: stretch; justify-content: center; flex-wrap: wrap; gap: .4rem; }
 .nav-links a { display: flex; align-items: center; justify-content: center; min-width: 104px; min-height: 44px; padding: .65rem .85rem; border-radius: 8px; color: var(--muted); font-size: .84rem; font-weight: 750; text-decoration: none; }
 .nav-links a:hover, .nav-links a.active { color: #07100a; background: var(--green); }

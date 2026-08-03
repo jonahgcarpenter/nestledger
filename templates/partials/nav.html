@@ -1,4 +1,5 @@
 <nav class="nav" aria-label="Primary navigation">
+  <a class="brand" href="{{ url_for('index') }}">NestLedger</a>
   <div class="nav-links">
     <div class="nav-menu">
       <a href="{{ url_for('strategies') }}"{% if request.endpoint in ('index', 'strategies', 'strategy') %} class="active" aria-current="page"{% endif %}>IRA Strategies <span class="nav-caret" aria-hidden="true">&#9662;</span></a>
