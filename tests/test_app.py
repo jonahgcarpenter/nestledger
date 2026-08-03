@@ -168,10 +168,45 @@ class AppFlowTests(unittest.TestCase):
         self.assertNotIn(b"Autopay Payment", spending_page)
         self.assertIn(b'id="categoryChart"', spending_page)
         self.assertIn(b'"name": "Groceries"', spending_page)
+        self.assertIn(b'id="transactionFilters"', spending_page)
+        self.assertIn(b'action="/spending/analyzer#confirmed-activity"', spending_page)
+        self.assertIn(b"transactionFilters.requestSubmit()", spending_page)
+        self.assertNotIn(b"Apply filters", spending_page)
         self.assertNotIn(b"Statement history", spending_page)
         statements_page = self.client.get("/spending/statements").data
         self.assertIn(b"Previous submissions", statements_page)
         self.assertIn(b"statement.pdf", statements_page)
+
+        confirmed_review = self.client.get(review_path).data
+        self.assertIn(b"Save changes", confirmed_review)
+        with application.app.app_context():
+            shopping_id = next(
+                row["id"]
+                for row in database.list_categories()
+                if row["name"] == "Shopping"
+            )
+        response = self.client.post(
+            review_path,
+            data={
+                prefix + "date": "2024-01-06",
+                prefix + "merchant": "Corrected Merchant",
+                prefix + "amount": "30.00",
+                prefix + "category": str(shopping_id),
+                payment_prefix + "date": "2024-01-05",
+                payment_prefix + "merchant": "Autopay Payment",
+                payment_prefix + "amount": "-25.50",
+                payment_prefix + "excluded": "on",
+                "action": "save",
+                "csrf_token": self.csrf,
+            },
+        )
+        self.assertEqual(response.headers["Location"], review_path)
+        with application.app.app_context():
+            corrected = database.get_transaction(transaction["id"])
+            self.assertEqual(corrected["transaction_date"], "2024-01-06")
+            self.assertEqual(corrected["merchant"], "Corrected Merchant")
+            self.assertEqual(corrected["amount_cents"], 3000)
+            self.assertEqual(corrected["category_id"], shopping_id)
 
         duplicate = self.client.post(
             "/spending/statements",

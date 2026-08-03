@@ -12,7 +12,7 @@
     <p class="hint">The original PDF is unavailable. This can occur for imports created before PDF archiving was enabled.</p>
   {% endif %}
   {% if warnings %}<ul class="warnings">{% for warning in warnings[:8] %}<li>{{ warning }}</li>{% endfor %}</ul>{% endif %}
-  {% if imported.status == "draft" %}<p class="lede">Rows shaded in coral need attention. Correct the merchant, date, amount, or category. Remember a merchant to create an exact category/exclusion filter for future imports.</p>{% endif %}
+  {% if imported.status == "draft" %}<p class="lede">Rows shaded in coral need attention. Correct the merchant, date, amount, or category. Remember a merchant to create an exact category/exclusion filter for future imports.</p>{% else %}<p class="lede">Correct transaction details, categories, and exclusion options at any time. Saved changes update the spending analyzer immediately.</p>{% endif %}
 
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -23,19 +23,19 @@
           {% for row in transactions %}
             {% set prefix = "transaction-" ~ row.id ~ "-" %}
             <tr{% if row.needs_review %} class="review-row"{% endif %}>
-              <td><input name="{{ prefix }}date" type="date" value="{{ row.transaction_date or '' }}" {% if imported.status == "confirmed" %}disabled{% endif %}></td>
-              <td><input name="{{ prefix }}merchant" value="{{ row.merchant }}" {% if imported.status == "confirmed" %}disabled{% endif %}></td>
+              <td><input name="{{ prefix }}date" type="date" value="{{ row.transaction_date or '' }}"></td>
+              <td><input name="{{ prefix }}merchant" value="{{ row.merchant }}"></td>
               <td class="muted">{{ row.original_description }}</td>
-              <td><select name="{{ prefix }}category" {% if imported.status == "confirmed" %}disabled{% endif %}><option value="">Uncategorized</option>{% for category in categories %}<option value="{{ category.id }}"{% if row.category_id == category.id %} selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></td>
-              <td><input name="{{ prefix }}amount" inputmode="decimal" value="{{ '%.2f'|format(row.amount_cents / 100) }}" {% if imported.status == "confirmed" %}disabled{% endif %}></td>
-              <td><label class="check"><input name="{{ prefix }}excluded" type="checkbox"{% if row.excluded %} checked{% endif %} {% if imported.status == "confirmed" %}disabled{% endif %}> Exclude</label><label class="check"><input name="{{ prefix }}save-rule" type="checkbox" {% if imported.status == "confirmed" %}disabled{% endif %}> Remember merchant</label></td>
+              <td><select name="{{ prefix }}category"><option value="">Uncategorized</option>{% for category in categories %}<option value="{{ category.id }}"{% if row.category_id == category.id %} selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></td>
+              <td><input name="{{ prefix }}amount" inputmode="decimal" value="{{ '%.2f'|format(row.amount_cents / 100) }}"></td>
+              <td><label class="check"><input name="{{ prefix }}excluded" type="checkbox"{% if row.excluded %} checked{% endif %}> Exclude</label><label class="check"><input name="{{ prefix }}save-rule" type="checkbox"> Remember merchant</label></td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
     <div class="actions actions-offset">
-      {% if imported.status == "draft" %}<button class="button" name="action" value="save" type="submit">Save draft</button><button class="button primary" name="action" value="confirm" type="submit">Confirm import</button>{% else %}<a class="button primary" href="{{ url_for('spending') }}">Back to spending</a>{% endif %}
+      {% if imported.status == "draft" %}<button class="button" name="action" value="save" type="submit">Save draft</button><button class="button primary" name="action" value="confirm" type="submit">Confirm import</button>{% else %}<button class="button primary" name="action" value="save" type="submit">Save changes</button><a class="button" href="{{ url_for('spending') }}">Back to analyzer</a>{% endif %}
     </div>
   </form>
   <form class="inline-form" action="{{ url_for('remove_import', import_id=imported.id) }}" method="post" onsubmit="return confirm('Delete this import and all of its transactions?')"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button danger actions-offset" type="submit">Delete import</button></form>

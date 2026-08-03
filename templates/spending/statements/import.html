@@ -2,8 +2,8 @@
 {% block title %}Import Statement{% endblock %}
 {% block content %}
   <p class="eyebrow">Local statement import</p>
-  <h1>Turn a statement into a ledger.</h1>
-  <p class="lede">Upload a Chase, Capital One, Discover, Apple Card, or American Express PDF. Text extraction and OCR run locally, and the original is retained in your private statement archive.</p>
+  <h2>Import Statements.</h2>
+  <p class="lede">Upload a Chase, Capital One, Discover, Apple Card, or American Express PDF.</p>
   <form class="panel upload" method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label for="statements">Credit card statement PDFs</label>
@@ -13,7 +13,6 @@
       <span>or click to choose files</span>
       <span id="selectedStatements" class="selected-files">No files selected</span>
     </label>
-    <p class="hint">Select one or more PDFs. Maximum file size: 16 MB each and 128 MB combined. Password-protected PDFs must be unlocked first. Scanned statements require Poppler and Tesseract. PDFs are removed if extraction fails.</p>
     {% if not tools.pdftotext or not tools.pdftoppm or not tools.tesseract %}
       <div class="flash error">
         Missing local tools:
@@ -23,7 +22,10 @@
         On Arch, run <code>sudo pacman -S --needed poppler tesseract tesseract-data-eng</code>.
       </div>
     {% endif %}
-    <button class="button primary" type="submit">Extract statements</button>
+    <div class="upload-footer">
+      <p class="hint">Select one or more PDFs. Maximum file size: 16 MB each and 128 MB combined. PDFs are removed if extraction fails.</p>
+      <button class="button primary" type="submit">Extract statements</button>
+    </div>
   </form>
 
   <section class="section">

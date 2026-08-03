@@ -442,9 +442,6 @@ def review_import(import_id):
     transactions = database.list_transactions(import_id=import_id)
 
     if request.method == "POST":
-        if imported["status"] != "draft":
-            flash("Confirmed imports cannot be edited.", "error")
-            return redirect(url_for("review_import", import_id=import_id))
         updates = []
         errors = []
         category_ids = {row["id"] for row in categories}
@@ -506,11 +503,16 @@ def review_import(import_id):
                 flash(error, "error")
             flash("Valid rows were saved. Correct the highlighted row and try again.", "info")
             return redirect(url_for("review_import", import_id=import_id))
-        if request.form.get("action") == "confirm":
+        if request.form.get("action") == "confirm" and imported["status"] == "draft":
             database.confirm_import(import_id)
             flash("Statement imported successfully.", "success")
             return redirect(url_for("spending"))
-        flash("Draft changes saved.", "success")
+        flash(
+            "Draft changes saved."
+            if imported["status"] == "draft"
+            else "Statement changes saved.",
+            "success",
+        )
         return redirect(url_for("review_import", import_id=import_id))
 
     warnings = json.loads(imported["warnings"] or "[]")

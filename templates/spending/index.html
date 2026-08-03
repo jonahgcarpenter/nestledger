@@ -24,14 +24,13 @@
     </section>
   {% endif %}
 
-  <section class="section">
+  <section id="confirmed-activity" class="section">
     <div class="section-head"><div><p class="eyebrow">Transactions</p><h2>Confirmed activity</h2></div></div>
-    <form class="panel form-grid" method="get">
+    <form id="transactionFilters" class="panel form-grid transaction-filters" method="get" action="{{ url_for('spending') }}#confirmed-activity">
       <div><label for="q">Merchant</label><input id="q" name="q" value="{{ filters.q }}" placeholder="Search merchants"></div>
       <div><label for="category">Category</label><select id="category" name="category"><option value="">All categories</option>{% for category in categories %}<option value="{{ category.id }}"{% if filters.category == category.id %} selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></div>
       <div><label for="from">From</label><input id="from" name="from" type="date" value="{{ filters.from }}"></div>
       <div><label for="to">To</label><input id="to" name="to" type="date" value="{{ filters.to }}"></div>
-      <button class="button" type="submit">Apply filters</button>
     </form>
     <div class="panel table-wrap panel-offset">
       <table>
@@ -48,6 +47,19 @@
 {% endblock %}
 
 {% block scripts %}
+<script>
+  const transactionFilters = document.getElementById("transactionFilters");
+  const merchantFilter = document.getElementById("q");
+  let filterTimer;
+
+  merchantFilter.addEventListener("input", () => {
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(() => transactionFilters.requestSubmit(), 350);
+  });
+  transactionFilters.querySelectorAll("select, input[type='date']").forEach(control => {
+    control.addEventListener("change", () => transactionFilters.requestSubmit());
+  });
+</script>
 {% if category_chart %}
 <script>
   const categories = {{ category_chart | tojson }};
