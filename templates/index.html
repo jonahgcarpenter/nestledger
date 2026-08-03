@@ -635,6 +635,9 @@
 </head>
 <body>
   <main>
+    <nav style="display:flex;justify-content:flex-end;margin-bottom:1.25rem">
+      <a class="strategy-option" href="{{ url_for('spending') }}">Spending &amp; statements</a>
+    </nav>
     {% if errors %}
       <div class="errors">
         <strong>Some CSV files could not be loaded:</strong>

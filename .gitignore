@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.py[cod]
+instance/
+uploads/
+*.pdf
+.pytest_cache/

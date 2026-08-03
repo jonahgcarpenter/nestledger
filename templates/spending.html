@@ -1,0 +1,206 @@
+{% extends "spending_base.html" %}
+{% block title %}Spending Overview{% endblock %}
+{% block content %}
+  <p class="eyebrow">Statement ledger</p>
+  <h1>See where the money went.</h1>
+  <p class="lede">Confirmed transactions are grouped by your categories. Filters decide which merchants are categorized or excluded from spending totals.</p>
+  <div class="actions">
+    <a class="button primary" href="{{ url_for('import_statement_pdf') }}">Import a statement</a>
+    <a class="button" href="{{ url_for('merchant_filters') }}">Manage filters</a>
+  </div>
+
+  {% if category_chart %}
+    <section class="section panel chart-panel" aria-label="Spending by category">
+      <div class="chart-details">
+        <p class="eyebrow">At a glance</p>
+        <h2>Category mix</h2>
+        <p class="hint">Each color maps to a category. Hover over the chart or legend for its share of spending.</p>
+        <div id="categoryLegend" class="legend"></div>
+      </div>
+      <div class="chart-stage">
+        <canvas id="categoryChart" aria-label="Spending by category donut chart" role="img"></canvas>
+        <div id="categoryTooltip" class="chart-tooltip" hidden><strong id="tooltipCategory"></strong><span id="tooltipValue"></span></div>
+      </div>
+    </section>
+  {% endif %}
+
+  <section class="section">
+    <div class="section-head"><div><p class="eyebrow">Transactions</p><h2>Confirmed activity</h2></div></div>
+    <form class="panel form-grid" method="get">
+      <div><label for="q">Merchant</label><input id="q" name="q" value="{{ filters.q }}" placeholder="Search merchants"></div>
+      <div><label for="category">Category</label><select id="category" name="category"><option value="">All categories</option>{% for category in categories %}<option value="{{ category.id }}"{% if filters.category == category.id %} selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></div>
+      <div><label for="from">From</label><input id="from" name="from" type="date" value="{{ filters.from }}"></div>
+      <div><label for="to">To</label><input id="to" name="to" type="date" value="{{ filters.to }}"></div>
+      <button class="button" type="submit">Apply filters</button>
+    </form>
+    <div class="panel table-wrap" style="margin-top: .8rem">
+      <table>
+        <thead><tr><th>Date</th><th>Merchant</th><th>Category</th><th class="money">Amount</th></tr></thead>
+        <tbody>
+          {% for row in transactions %}
+            <tr><td class="muted">{{ row.transaction_date }}</td><td class="merchant">{{ row.merchant }}</td><td>{{ row.category_name or "Uncategorized" }}</td><td class="money{% if row.amount_cents < 0 %} credit{% endif %}">{{ row.amount_cents|money }}</td></tr>
+          {% else %}<tr><td class="empty" colspan="4">No confirmed transactions match these filters.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {% if imports %}
+    <section class="section">
+      <div class="section-head"><div><p class="eyebrow">History</p><h2>Statement imports</h2></div></div>
+      <div class="panel table-wrap"><table><thead><tr><th>File</th><th>Issuer</th><th>Period</th><th>Status</th><th>Original</th></tr></thead><tbody>{% for item in imports %}<tr><td><a href="{{ url_for('review_import', import_id=item.id) }}">{{ item.filename }}</a></td><td>{{ item.issuer }}</td><td>{{ item.statement_start or "?" }} to {{ item.statement_end or "?" }}</td><td>{{ item.status }}</td><td>{% if item.id in available_import_ids %}<a href="{{ url_for('view_statement_pdf', import_id=item.id) }}" target="_blank" rel="noopener">View PDF</a>{% else %}<span class="muted">Unavailable</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+    </section>
+  {% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if category_chart %}
+<script>
+  const categories = {{ category_chart | tojson }};
+  const palette = [
+    "#264d3b", "#cf5a36", "#e0a52b", "#537f78", "#8a5d3b",
+    "#88739a", "#b4a13d", "#426b8a", "#b56576", "#6f7d50",
+    "#d17c57", "#5d596b"
+  ];
+  const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+  const total = categories.reduce((sum, category) => sum + category.amount_cents, 0);
+  let metrics;
+  let hoveredSlice = -1;
+  let animationFrame = null;
+  const offsets = categories.map(() => 0);
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function drawChart(resize = true) {
+    const canvas = document.getElementById("categoryChart");
+    const size = Math.max(180, Math.min(canvas.parentElement.clientWidth - 32, 400));
+    const ratio = window.devicePixelRatio || 1;
+    if (resize || !metrics || metrics.size !== size || metrics.ratio !== ratio) {
+      canvas.width = size * ratio;
+      canvas.height = size * ratio;
+      canvas.style.width = `${size}px`;
+      canvas.style.height = `${size}px`;
+    }
+    const context = canvas.getContext("2d");
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    context.clearRect(0, 0, size, size);
+    const center = size / 2;
+    const radius = size * .43;
+    metrics = { center, radius, innerRadius: radius * .48, size, ratio };
+    let angle = -Math.PI / 2;
+    categories.forEach((category, index) => {
+      const slice = category.amount_cents / total * Math.PI * 2;
+      const middle = angle + slice / 2;
+      const offsetX = Math.cos(middle) * offsets[index];
+      const offsetY = Math.sin(middle) * offsets[index];
+      context.save();
+      context.globalAlpha = hoveredSlice === -1 || hoveredSlice === index ? 1 : .5;
+      if (hoveredSlice === index) { context.shadowColor = "rgba(0,0,0,.55)"; context.shadowBlur = 16; }
+      context.beginPath();
+      context.moveTo(center + offsetX, center + offsetY);
+      context.arc(center + offsetX, center + offsetY, radius, angle, angle + slice);
+      context.closePath();
+      context.fillStyle = palette[index % palette.length];
+      context.fill();
+      context.strokeStyle = "#111914";
+      context.lineWidth = 2;
+      context.stroke();
+      context.restore();
+      angle += slice;
+    });
+    context.beginPath();
+    context.arc(center, center, metrics.innerRadius, 0, Math.PI * 2);
+    context.fillStyle = "#111914";
+    context.fill();
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillStyle = "#edf4ef";
+    context.font = `700 ${Math.max(14, size * .05)}px system-ui`;
+    context.fillText(money.format(total / 100), center, center - 7);
+    context.fillStyle = "#98a79e";
+    context.font = `600 ${Math.max(10, size * .03)}px system-ui`;
+    context.fillText("spending", center, center + 14);
+  }
+
+  function animateSlices() {
+    let moving = false;
+    offsets.forEach((offset, index) => {
+      const target = index === hoveredSlice ? 10 : 0;
+      const difference = target - offset;
+      if (Math.abs(difference) > .05) { offsets[index] += difference * .22; moving = true; }
+      else offsets[index] = target;
+    });
+    drawChart(false);
+    animationFrame = moving ? requestAnimationFrame(animateSlices) : null;
+  }
+
+  function setHoveredSlice(index) {
+    if (hoveredSlice === index) return;
+    hoveredSlice = index;
+    if (reduceMotion) { offsets.forEach((_, i) => offsets[i] = i === index ? 10 : 0); drawChart(false); return; }
+    if (animationFrame === null) animationFrame = requestAnimationFrame(animateSlices);
+  }
+
+  function categoryAtPoint(x, y) {
+    const dx = x - metrics.center;
+    const dy = y - metrics.center;
+    const distance = Math.hypot(dx, dy);
+    if (distance < metrics.innerRadius || distance > metrics.radius + 12) return null;
+    const circle = Math.PI * 2;
+    const angle = (Math.atan2(dy, dx) + Math.PI / 2 + circle) % circle;
+    let boundary = 0;
+    for (let index = 0; index < categories.length; index += 1) {
+      boundary += categories[index].amount_cents / total * circle;
+      if (angle <= boundary) return { category: categories[index], index };
+    }
+    return null;
+  }
+
+  function buildLegend() {
+    const legend = document.getElementById("categoryLegend");
+    legend.replaceChildren(...categories.map((category, index) => {
+      const item = document.createElement("div");
+      item.className = "legend-item";
+      item.addEventListener("pointerenter", () => setHoveredSlice(index));
+      item.addEventListener("pointerleave", () => setHoveredSlice(-1));
+      const swatch = document.createElement("span");
+      swatch.className = "legend-swatch";
+      swatch.style.background = palette[index % palette.length];
+      const copy = document.createElement("span");
+      copy.className = "legend-copy";
+      const name = document.createElement("strong");
+      name.className = "legend-name";
+      name.textContent = category.name;
+      const share = document.createElement("span");
+      share.className = "legend-count";
+      share.textContent = `${(category.amount_cents / total * 100).toFixed(1)}% of spending`;
+      copy.append(name, share);
+      const value = document.createElement("strong");
+      value.className = "legend-value";
+      value.textContent = money.format(category.amount_cents / 100);
+      item.append(swatch, copy, value);
+      return item;
+    }));
+  }
+
+  const canvas = document.getElementById("categoryChart");
+  const tooltip = document.getElementById("categoryTooltip");
+  canvas.addEventListener("pointermove", event => {
+    const rect = canvas.getBoundingClientRect();
+    const match = categoryAtPoint(event.clientX - rect.left, event.clientY - rect.top);
+    if (!match) { tooltip.hidden = true; setHoveredSlice(-1); return; }
+    setHoveredSlice(match.index);
+    document.getElementById("tooltipCategory").textContent = match.category.name;
+    document.getElementById("tooltipValue").textContent = `${money.format(match.category.amount_cents / 100)} · ${(match.category.amount_cents / total * 100).toFixed(1)}%`;
+    const panelRect = canvas.parentElement.getBoundingClientRect();
+    tooltip.style.left = `${event.clientX - panelRect.left}px`;
+    tooltip.style.top = `${event.clientY - panelRect.top}px`;
+    tooltip.hidden = false;
+  });
+  canvas.addEventListener("pointerleave", () => { tooltip.hidden = true; setHoveredSlice(-1); });
+  drawChart();
+  buildLegend();
+  let resizeTimer;
+  window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(drawChart, 100); });
+</script>
+{% endif %}
+{% endblock %}
