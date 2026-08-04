@@ -61,7 +61,7 @@ docker run --rm \
   --name nestledger \
   -p 8000:8000 \
   -e SECRET_KEY="$(openssl rand -hex 32)" \
-  -v nestledger-data:/app/instance \
+  -v nestledger-data:/app/data \
   nestledger
 ```
 

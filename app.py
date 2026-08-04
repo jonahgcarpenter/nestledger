@@ -37,9 +37,9 @@ BASE_DIR = Path(__file__).resolve().parent
 STRATEGIES_DIR = BASE_DIR / "strategies"
 REQUIRED_COLUMNS = {"Strategy", "Category", "Asset", "Ticker", "Allocation"}
 
-app = Flask(__name__)
+app = Flask(__name__, instance_path=str(BASE_DIR / "data"))
 app.config.from_mapping(
-    DATABASE=str(Path(app.instance_path) / "spending.sqlite3"),
+    DATABASE=str(Path(app.instance_path) / "nestledger.db"),
     STATEMENTS_DIR=str(Path(app.instance_path) / "statements"),
     MAX_CONTENT_LENGTH=128 * 1024 * 1024,
     MAX_PDF_SIZE=16 * 1024 * 1024,

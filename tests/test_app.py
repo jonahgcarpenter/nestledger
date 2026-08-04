@@ -17,6 +17,10 @@ from statement_import import (
     StatementImportError,
 )
 
+DEFAULT_INSTANCE_PATH = Path(application.app.instance_path)
+DEFAULT_DATABASE_PATH = Path(application.app.config["DATABASE"])
+DEFAULT_STATEMENTS_PATH = Path(application.app.config["STATEMENTS_DIR"])
+
 
 class AppFlowTests(unittest.TestCase):
     def setUp(self):
@@ -64,6 +68,12 @@ class AppFlowTests(unittest.TestCase):
         self.assertIn(b'id="statementDropZone"', statements_page)
         self.assertIn(b"Drop statement PDFs here", statements_page)
         self.assertIn(b"multiple required", statements_page)
+
+    def test_default_storage_paths(self):
+        expected_data_path = Path(application.__file__).resolve().parent / "data"
+        self.assertEqual(DEFAULT_INSTANCE_PATH, expected_data_path)
+        self.assertEqual(DEFAULT_DATABASE_PATH, expected_data_path / "nestledger.db")
+        self.assertEqual(DEFAULT_STATEMENTS_PATH, expected_data_path / "statements")
 
     def test_section_templates_extend_shared_base(self):
         root = Path(__file__).resolve().parents[1]

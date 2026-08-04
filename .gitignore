@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 instance/
+data/
 uploads/
 *.pdf
 .pytest_cache/

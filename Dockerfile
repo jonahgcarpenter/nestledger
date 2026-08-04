@@ -22,8 +22,8 @@ COPY --chown=appuser:appuser static/ ./static/
 COPY --chown=appuser:appuser strategies/ ./strategies/
 COPY --chown=appuser:appuser templates/ ./templates/
 
-RUN mkdir --parents /app/instance/statements \
-    && chown --recursive appuser:appuser /app/instance
+RUN mkdir --parents /app/data/statements \
+    && chown --recursive appuser:appuser /app/data
 
 USER appuser
 
