@@ -14,8 +14,14 @@
   <form method="post" id="strategyEditor">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <section class="panel strategy-name-field">
-      <label for="strategyName">Strategy name</label>
-      <input id="strategyName" name="name" maxlength="120" value="{{ portfolio.name }}" required>
+      <div>
+        <label for="strategyName">Strategy name</label>
+        <input id="strategyName" name="name" maxlength="120" value="{{ portfolio.name }}" required>
+      </div>
+      <div>
+        <label for="strategyRiskScore">Risk score</label>
+        <input id="strategyRiskScore" name="risk_score" type="number" min="1" max="10" step="1" value="{{ portfolio.risk_score }}" required>
+      </div>
     </section>
     <section class="panel editor-panel">
       <div class="holding-editor-head">

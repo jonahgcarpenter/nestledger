@@ -266,12 +266,20 @@ def _parse_strategy_editor():
     return parse_strategy_csv(output.getvalue().encode(), "strategy.csv")
 
 
+def _strategy_risk_score():
+    risk_score = request.form.get("risk_score", type=int)
+    if risk_score is None or not 1 <= risk_score <= 10:
+        raise StrategyImportError("Risk score must be a whole number from 1 to 10")
+    return risk_score
+
+
 def _submitted_strategy_editor(selected):
     categories = request.form.getlist("category")
     assets = request.form.getlist("asset")
     tickers = request.form.getlist("ticker")
     allocations = request.form.getlist("allocation")
     selected["name"] = request.form.get("name", "")
+    selected["risk_score"] = request.form.get("risk_score", "")
     selected["holdings"] = [
         {
             "category": category,
@@ -323,6 +331,7 @@ def import_strategy():
             filename = secure_filename(uploaded.filename) or "strategy.csv"
             content = uploaded.stream.read(MAX_FILE_SIZE + 1)
             try:
+                risk_score = _strategy_risk_score()
                 parsed = parse_strategy_csv(content, filename)
                 if replacement is not None:
                     if parsed.name.casefold() != replacement["name"].casefold():
@@ -332,9 +341,10 @@ def import_strategy():
                     database.replace_ira_strategy(
                         replacement["id"], parsed,
                         source_filename=filename, update_source=True,
+                        risk_score=risk_score,
                     )
                     flash(f"Replaced {replacement['name']} from CSV.", "success")
-                    return redirect(url_for("strategy", slug=replacement["slug"]))
+                    return redirect(url_for("strategies"))
                 conflict = database.get_ira_strategy_by_name(parsed.name)
                 if conflict is not None:
                     flash(
@@ -342,12 +352,11 @@ def import_strategy():
                         "error",
                     )
                     return redirect(url_for("import_strategy", replace=conflict["id"]))
-                strategy_id = database.create_ira_strategy(
-                    parsed, _strategy_slug(parsed.name), filename
+                database.create_ira_strategy(
+                    parsed, _strategy_slug(parsed.name), filename, risk_score
                 )
-                created = database.get_ira_strategy(strategy_id)
                 flash(f"Imported {parsed.name}.", "success")
-                return redirect(url_for("strategy", slug=created["slug"]))
+                return redirect(url_for("strategies"))
             except StrategyImportError as error:
                 flash(str(error), "error")
             except sqlite3.IntegrityError:
@@ -377,8 +386,11 @@ def edit_strategy(strategy_id):
     if request.method == "POST":
         submitted = _submitted_strategy_editor(selected)
         try:
+            risk_score = _strategy_risk_score()
             parsed = _parse_strategy_editor()
-            database.replace_ira_strategy(strategy_id, parsed)
+            database.replace_ira_strategy(
+                strategy_id, parsed, risk_score=risk_score
+            )
             flash(f"Saved {parsed.name}.", "success")
             return redirect(url_for("strategy", slug=selected["slug"]))
         except StrategyImportError as error:

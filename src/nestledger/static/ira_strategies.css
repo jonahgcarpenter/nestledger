@@ -473,7 +473,15 @@
     .strategy-card .hint { margin: 0.65rem 0 0; }
     .strategy-empty { padding: clamp(1.5rem, 5vw, 4rem); }
     .strategy-empty h2 { margin-bottom: 1rem; }
-    .strategy-name-field { margin: 2rem 0 1rem; padding: 1.5rem; }
+    .strategy-name-field {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(140px, 0.25fr);
+      gap: 1rem;
+      margin: 2rem 0 1rem;
+      padding: 1.5rem;
+    }
+    .strategy-risk-field { max-width: 220px; margin-bottom: 1.5rem; }
+    .strategy-risk-field .hint { margin: 0.5rem 0 0; }
     .editor-panel { padding: clamp(1rem, 3vw, 1.5rem); }
     .holding-editor-head,
     .editor-footer {
@@ -575,6 +583,7 @@
       .editor-footer { align-items: stretch; flex-direction: column; }
       .holding-editor-row { grid-template-columns: 1fr; }
       .holding-editor-row .remove-holding { grid-column: auto; justify-self: start; }
+      .strategy-name-field { grid-template-columns: 1fr; }
     }
 
     @media (max-width: 480px) {

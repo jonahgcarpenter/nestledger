@@ -94,7 +94,9 @@ High risk,Total,,,100.00%
 Allocations excluding the optional `Total` row must add up to 100%. The
 strategy appears in the strategy switcher automatically. CSV files are
 validated in memory and are not retained after import. Strategies can be
-edited, replaced from another CSV, or deleted through the UI.
+edited, replaced from another CSV, or deleted through the UI. Each strategy has
+a risk score from 1 (lowest) to 10 (highest); analyzer choices are ordered by
+risk score and then alphabetically.
 
 Use **IRA > Analyzer** to switch between imported strategies, review target
 allocations, and run the deposit and rebalancing calculators.

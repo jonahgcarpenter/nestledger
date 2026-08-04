@@ -35,10 +35,10 @@ class AppFlowTests(unittest.TestCase):
         with application.app.app_context():
             database.close_db()
             database.init_db()
-            for slug, name in (
-                ("low_risk", "Low risk"),
-                ("medium_risk", "Medium risk"),
-                ("high_risk", "High risk"),
+            for slug, name, risk_score in (
+                ("low_risk", "Low risk", 2),
+                ("medium_risk", "Medium risk", 5),
+                ("high_risk", "High risk", 8),
             ):
                 parsed = parse_strategy_csv(
                     (
@@ -47,7 +47,9 @@ class AppFlowTests(unittest.TestCase):
                     ).encode(),
                     f"{slug}.csv",
                 )
-                database.create_ira_strategy(parsed, slug, f"{slug}.csv")
+                database.create_ira_strategy(
+                    parsed, slug, f"{slug}.csv", risk_score
+                )
         self.client = application.app.test_client()
         self.csrf = "test-csrf-token"
         with self.client.session_transaction() as session:
@@ -80,6 +82,18 @@ class AppFlowTests(unittest.TestCase):
         self.assertIn(b'href="/ira/analyzer/low_risk"', analyzer_page)
         self.assertIn(b'href="/ira/analyzer/medium_risk"', analyzer_page)
         self.assertIn(b'href="/ira/analyzer/high_risk"', analyzer_page)
+        self.assertLess(
+            analyzer_page.index(b'href="/ira/analyzer/low_risk"'),
+            analyzer_page.index(b'href="/ira/analyzer/medium_risk"'),
+        )
+        self.assertLess(
+            analyzer_page.index(b'href="/ira/analyzer/medium_risk"'),
+            analyzer_page.index(b'href="/ira/analyzer/high_risk"'),
+        )
+
+        strategies_page = self.client.get("/ira/strategies").data
+        self.assertIn(b'action="/ira/strategies/1/delete"', strategies_page)
+        self.assertIn(b">Delete</button>", strategies_page)
 
         statements_page = self.client.get("/spending/statements").data
         self.assertIn(b'id="statementDropZone"', statements_page)
@@ -134,15 +148,17 @@ class AppFlowTests(unittest.TestCase):
             "/ira/strategies/import",
             data={
                 "csrf_token": self.csrf,
+                "risk_score": "7",
                 "strategy": (io.BytesIO(csv_content), "custom.csv"),
             },
             content_type="multipart/form-data",
         )
         self.assertEqual(imported.status_code, 302)
-        self.assertTrue(imported.headers["Location"].endswith("/ira/analyzer/custom-plan"))
+        self.assertEqual(imported.headers["Location"], "/ira/strategies")
         with application.app.app_context():
             strategy = database.get_ira_strategy_by_name("Custom plan")
             self.assertEqual(strategy["source_filename"], "custom.csv")
+            self.assertEqual(strategy["risk_score"], 7)
             strategy_id = strategy["id"]
             slug = strategy["slug"]
 
@@ -150,6 +166,7 @@ class AppFlowTests(unittest.TestCase):
             "/ira/strategies/import",
             data={
                 "csrf_token": self.csrf,
+                "risk_score": "7",
                 "strategy": (io.BytesIO(csv_content), "again.csv"),
             },
             content_type="multipart/form-data",
@@ -166,14 +183,17 @@ class AppFlowTests(unittest.TestCase):
             data={
                 "csrf_token": self.csrf,
                 "replace": str(strategy_id),
+                "risk_score": "8",
                 "strategy": (io.BytesIO(replacement_content), "replacement.csv"),
             },
             content_type="multipart/form-data",
         )
         self.assertEqual(replaced.status_code, 302)
+        self.assertEqual(replaced.headers["Location"], "/ira/strategies")
         with application.app.app_context():
             strategy = database.get_ira_strategy(strategy_id)
             self.assertEqual(strategy["slug"], slug)
+            self.assertEqual(strategy["risk_score"], 8)
             self.assertEqual(len(strategy["holdings"]), 2)
 
         invalid_edit = self.client.post(
@@ -181,6 +201,7 @@ class AppFlowTests(unittest.TestCase):
             data={
                 "csrf_token": self.csrf,
                 "name": "Unsaved custom name",
+                "risk_score": "6",
                 "category": ["Stocks"],
                 "asset": ["Unsaved fund"],
                 "ticker": ["TEST"],
@@ -198,6 +219,7 @@ class AppFlowTests(unittest.TestCase):
             data={
                 "csrf_token": self.csrf,
                 "name": "Custom retirement plan",
+                "risk_score": "6",
                 "category": ["Stocks", "Cash"],
                 "asset": ["Index fund", "Money market"],
                 "ticker": ["INDEX", ""],
@@ -209,6 +231,7 @@ class AppFlowTests(unittest.TestCase):
             strategy = database.get_ira_strategy(strategy_id)
             self.assertEqual(strategy["name"], "Custom retirement plan")
             self.assertEqual(strategy["slug"], slug)
+            self.assertEqual(strategy["risk_score"], 6)
 
         deleted = self.client.post(
             f"/ira/strategies/{strategy_id}/delete",

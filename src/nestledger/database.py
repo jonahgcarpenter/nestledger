@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS ira_strategies (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL COLLATE NOCASE UNIQUE,
     slug TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    risk_score INTEGER NOT NULL DEFAULT 5 CHECK(risk_score BETWEEN 1 AND 10),
     source_filename TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -172,6 +173,7 @@ def init_db():
     db.executescript(SCHEMA)
     _migrate_imports(db)
     _migrate_filters(db)
+    _migrate_ira_strategies(db)
     if db.execute(
         "SELECT 1 FROM app_metadata WHERE key = 'defaults_seeded'"
     ).fetchone() is None:
@@ -243,6 +245,15 @@ def _migrate_filters(db):
     )
 
 
+def _migrate_ira_strategies(db):
+    columns = db.execute("PRAGMA table_info(ira_strategies)").fetchall()
+    if not any(row["name"] == "risk_score" for row in columns):
+        db.execute(
+            """ALTER TABLE ira_strategies ADD COLUMN risk_score INTEGER
+               NOT NULL DEFAULT 5 CHECK(risk_score BETWEEN 1 AND 10)"""
+        )
+
+
 @click.command("init-db")
 def init_db_command():
     """Create the database tables and seed default categories and filters."""
@@ -287,7 +298,7 @@ def list_ira_strategies():
            LEFT JOIN ira_strategy_categories c ON c.strategy_id = s.id
            LEFT JOIN ira_strategy_holdings h ON h.category_id = c.id
            GROUP BY s.id
-           ORDER BY s.name COLLATE NOCASE, s.id"""
+           ORDER BY s.risk_score, s.name COLLATE NOCASE, s.id"""
     ).fetchall()
 
 
@@ -355,6 +366,7 @@ def _hydrate_ira_strategy(strategy):
         "name": strategy["name"],
         "strategy": strategy["name"],
         "slug": strategy["slug"],
+        "risk_score": strategy["risk_score"],
         "source_filename": strategy["source_filename"],
         "created_at": strategy["created_at"],
         "updated_at": strategy["updated_at"],
@@ -409,23 +421,28 @@ def _validate_ira_strategy(parsed_strategy):
         raise ValueError("strategy allocations must total 100.00 percent")
 
 
-def create_ira_strategy(parsed_strategy, slug, source_filename=None):
+def create_ira_strategy(parsed_strategy, slug, source_filename=None, risk_score=5):
     _validate_ira_strategy(parsed_strategy)
+    if not 1 <= risk_score <= 10:
+        raise ValueError("risk score must be between 1 and 10")
     db = get_db()
     with db:
         strategy_id = db.execute(
-            """INSERT INTO ira_strategies(name, slug, source_filename)
-               VALUES (?, ?, ?)""",
-            (parsed_strategy.name, slug, source_filename),
+            """INSERT INTO ira_strategies(name, slug, risk_score, source_filename)
+               VALUES (?, ?, ?, ?)""",
+            (parsed_strategy.name, slug, risk_score, source_filename),
         ).lastrowid
         _insert_ira_strategy_rows(db, strategy_id, parsed_strategy)
     return strategy_id
 
 
 def replace_ira_strategy(
-    strategy_id, parsed_strategy, *, source_filename=None, update_source=False
+    strategy_id, parsed_strategy, *, source_filename=None, update_source=False,
+    risk_score=None
 ):
     _validate_ira_strategy(parsed_strategy)
+    if risk_score is not None and not 1 <= risk_score <= 10:
+        raise ValueError("risk score must be between 1 and 10")
     db = get_db()
     with db:
         strategy = db.execute(
@@ -438,6 +455,9 @@ def replace_ira_strategy(
         if update_source:
             assignments += ", source_filename = ?"
             params.append(source_filename)
+        if risk_score is not None:
+            assignments += ", risk_score = ?"
+            params.append(risk_score)
         params.append(strategy_id)
         db.execute(
             f"UPDATE ira_strategies SET {assignments} WHERE id = ?", params

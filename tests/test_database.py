@@ -132,6 +132,7 @@ class DatabaseTests(unittest.TestCase):
         )
         strategy = database.get_ira_strategy(strategy_id)
         self.assertEqual(strategy["name"], "Retirement plan")
+        self.assertEqual(strategy["risk_score"], 5)
         self.assertEqual(
             [category["name"] for category in strategy["categories"]],
             ["Stocks", "Bonds"],
@@ -148,6 +149,10 @@ class DatabaseTests(unittest.TestCase):
             "another.csv",
         )
         database.create_ira_strategy(conflicting, "another-plan", "another.csv")
+        self.assertEqual(
+            [row["name"] for row in database.list_ira_strategies()],
+            ["Another plan", "Retirement plan"],
+        )
         with self.assertRaises(sqlite3.IntegrityError):
             database.replace_ira_strategy(strategy_id, conflicting)
         self.assertEqual(database.get_ira_strategy(strategy_id)["name"], "Retirement plan")
@@ -162,6 +167,29 @@ class DatabaseTests(unittest.TestCase):
             .fetchone()[0],
             0,
         )
+
+    def test_existing_strategies_receive_default_risk_score(self):
+        db = database.get_db()
+        db.executescript(
+            """DROP TABLE ira_strategy_holdings;
+               DROP TABLE ira_strategy_categories;
+               DROP TABLE ira_strategies;
+               CREATE TABLE ira_strategies (
+                   id INTEGER PRIMARY KEY,
+                   name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                   slug TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                   source_filename TEXT,
+                   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+               );
+               INSERT INTO ira_strategies(name, slug)
+               VALUES ('Existing plan', 'existing-plan');"""
+        )
+        database.init_db()
+        strategy = db.execute(
+            "SELECT * FROM ira_strategies WHERE slug = 'existing-plan'"
+        ).fetchone()
+        self.assertEqual(strategy["risk_score"], 5)
 
 
 if __name__ == "__main__":

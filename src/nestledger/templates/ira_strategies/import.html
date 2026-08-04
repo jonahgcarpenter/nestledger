@@ -20,6 +20,11 @@
   <form class="panel upload" method="post" enctype="multipart/form-data"{% if replacement %} onsubmit="return confirm('Replace all holdings in this strategy?');"{% endif %}>
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if replacement %}<input type="hidden" name="replace" value="{{ replacement.id }}">{% endif %}
+    <div class="strategy-risk-field">
+      <label for="riskScore">Risk score</label>
+      <input id="riskScore" name="risk_score" type="number" min="1" max="10" step="1" value="{{ request.form.get('risk_score', replacement.risk_score if replacement else 5) }}" required>
+      <p class="hint">1 is the lowest risk and 10 is the highest.</p>
+    </div>
     <label class="drop-zone" for="strategyCsv">
       <strong>{% if replacement %}Choose replacement CSV{% else %}Choose strategy CSV{% endif %}</strong>
       <span>UTF-8 CSV, up to 256 KiB and 500 holdings</span>

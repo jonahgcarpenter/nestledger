@@ -19,13 +19,17 @@
       {% for item in strategies %}
         <article class="panel strategy-card">
           <div>
-            <p class="eyebrow">{{ item.holding_count }} holdings</p>
+            <p class="eyebrow">Risk {{ item.risk_score }}/10 &middot; {{ item.holding_count }} holdings</p>
             <h2>{{ item.name }}</h2>
             <p class="hint">Updated {{ item.updated_at }}</p>
           </div>
           <div class="actions">
             <a class="button primary" href="{{ url_for('strategy', slug=item.slug) }}">Analyze</a>
             <a class="button" href="{{ url_for('edit_strategy', strategy_id=item.id) }}">Edit</a>
+            <form method="post" action="{{ url_for('delete_strategy', strategy_id=item.id) }}" onsubmit="return confirm('Delete this strategy?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="button danger" type="submit">Delete</button>
+            </form>
           </div>
         </article>
       {% endfor %}
