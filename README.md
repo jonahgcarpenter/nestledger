@@ -40,8 +40,8 @@ content is sent to an external service.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-python app.py
+pip install -e .
+python -m nestledger
 ```
 
 Open `http://127.0.0.1:5000`
@@ -81,7 +81,7 @@ Importing a credit-card statement creates a draft of its transactions for review
 
 ## Add An IRA Portfolio
 
-Place a `.csv` file in `strategies/` with this format:
+Place a `.csv` file in `data/strategies/` with this format:
 
 ```csv
 Strategy,Category,Asset,Ticker,Allocation

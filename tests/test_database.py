@@ -5,7 +5,7 @@ from pathlib import Path
 
 from flask import Flask
 
-import database
+from nestledger import database
 
 
 class DatabaseTests(unittest.TestCase):

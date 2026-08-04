@@ -8,9 +8,9 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
-import app as application
-import database
-from statement_import import (
+import nestledger.app as application
+from nestledger import database
+from nestledger.statement_import import (
     ExtractionResult,
     ParsedStatement,
     ParsedTransaction,
@@ -20,11 +20,25 @@ from statement_import import (
 DEFAULT_INSTANCE_PATH = Path(application.app.instance_path)
 DEFAULT_DATABASE_PATH = Path(application.app.config["DATABASE"])
 DEFAULT_STATEMENTS_PATH = Path(application.app.config["STATEMENTS_DIR"])
+DEFAULT_STRATEGIES_PATH = application.STRATEGIES_DIR
 
 
 class AppFlowTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
+        self.original_strategies_dir = application.STRATEGIES_DIR
+        application.STRATEGIES_DIR = Path(self.temporary.name) / "strategies"
+        application.STRATEGIES_DIR.mkdir()
+        for slug, name in (
+            ("low_risk", "Low risk"),
+            ("medium_risk", "Medium risk"),
+            ("high_risk", "High risk"),
+        ):
+            (application.STRATEGIES_DIR / f"{slug}.csv").write_text(
+                "Strategy,Category,Asset,Ticker,Allocation\n"
+                f"{name},US stocks,Example fund,EXAMPLE,100.00%\n",
+                encoding="utf-8",
+            )
         application.app.config.update(
             TESTING=True,
             DATABASE=str(Path(self.temporary.name) / "test.sqlite3"),
@@ -40,6 +54,7 @@ class AppFlowTests(unittest.TestCase):
             session["csrf_token"] = self.csrf
 
     def tearDown(self):
+        application.STRATEGIES_DIR = self.original_strategies_dir
         self.temporary.cleanup()
 
     def test_spending_pages_load(self):
@@ -70,14 +85,23 @@ class AppFlowTests(unittest.TestCase):
         self.assertIn(b"multiple required", statements_page)
 
     def test_default_storage_paths(self):
-        expected_data_path = Path(application.__file__).resolve().parent / "data"
+        expected_data_path = application.PROJECT_ROOT / "data"
         self.assertEqual(DEFAULT_INSTANCE_PATH, expected_data_path)
         self.assertEqual(DEFAULT_DATABASE_PATH, expected_data_path / "nestledger.db")
         self.assertEqual(DEFAULT_STATEMENTS_PATH, expected_data_path / "statements")
+        self.assertEqual(DEFAULT_STRATEGIES_PATH, expected_data_path / "strategies")
+
+    def test_missing_strategies_are_a_valid_first_run(self):
+        with patch.object(
+            application, "STRATEGIES_DIR", Path(self.temporary.name) / "missing"
+        ):
+            response = self.client.get("/ira/strategies")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"No valid portfolios were found", response.data)
+        self.assertIn(b"data/strategies/", response.data)
 
     def test_section_templates_extend_shared_base(self):
-        root = Path(__file__).resolve().parents[1]
-        templates = root / "templates"
+        templates = Path(application.__file__).resolve().parent / "templates"
         page_templates = (
             templates / "ira_strategies" / "index.html",
             templates / "spending" / "index.html",
@@ -94,8 +118,8 @@ class AppFlowTests(unittest.TestCase):
         self.assertIn(b'href="/static/app.css"', strategy_page)
         self.assertIn(b'href="/static/ira_strategies.css"', strategy_page)
 
-    @patch("app.parse_statement")
-    @patch("app.extract_pdf_text")
+    @patch("nestledger.app.parse_statement")
+    @patch("nestledger.app.extract_pdf_text")
     def test_upload_review_confirm_and_duplicate(self, extract, parse):
         extract.return_value = ExtractionResult("redacted", "text")
         parse.return_value = ParsedStatement(
@@ -253,7 +277,7 @@ class AppFlowTests(unittest.TestCase):
         with application.app.app_context():
             self.assertEqual(database.list_imports(), [])
 
-    @patch("app.extract_pdf_text")
+    @patch("nestledger.app.extract_pdf_text")
     def test_failed_import_does_not_retain_pdf(self, extract):
         extract.side_effect = StatementImportError("Unreadable statement")
         payload = b"%PDF-1.7\nunreadable"
@@ -272,8 +296,8 @@ class AppFlowTests(unittest.TestCase):
         with application.app.app_context():
             self.assertEqual(database.list_imports(), [])
 
-    @patch("app.parse_statement")
-    @patch("app.extract_pdf_text")
+    @patch("nestledger.app.parse_statement")
+    @patch("nestledger.app.extract_pdf_text")
     def test_bulk_upload_keeps_successes_when_one_file_fails(self, extract, parse):
         extract.return_value = ExtractionResult("redacted", "text")
         parse.return_value = ParsedStatement(
