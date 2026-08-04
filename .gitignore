@@ -2,10 +2,5 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
-build/
-dist/
-instance/
 data/*
-uploads/
-*.pdf
 .pytest_cache/
