@@ -16,29 +16,16 @@ from nestledger.statement_import import (
     ParsedTransaction,
     StatementImportError,
 )
+from nestledger.strategy_import import parse_strategy_csv
 
 DEFAULT_INSTANCE_PATH = Path(application.app.instance_path)
 DEFAULT_DATABASE_PATH = Path(application.app.config["DATABASE"])
 DEFAULT_STATEMENTS_PATH = Path(application.app.config["STATEMENTS_DIR"])
-DEFAULT_STRATEGIES_PATH = application.STRATEGIES_DIR
 
 
 class AppFlowTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
-        self.original_strategies_dir = application.STRATEGIES_DIR
-        application.STRATEGIES_DIR = Path(self.temporary.name) / "strategies"
-        application.STRATEGIES_DIR.mkdir()
-        for slug, name in (
-            ("low_risk", "Low risk"),
-            ("medium_risk", "Medium risk"),
-            ("high_risk", "High risk"),
-        ):
-            (application.STRATEGIES_DIR / f"{slug}.csv").write_text(
-                "Strategy,Category,Asset,Ticker,Allocation\n"
-                f"{name},US stocks,Example fund,EXAMPLE,100.00%\n",
-                encoding="utf-8",
-            )
         application.app.config.update(
             TESTING=True,
             DATABASE=str(Path(self.temporary.name) / "test.sqlite3"),
@@ -48,18 +35,30 @@ class AppFlowTests(unittest.TestCase):
         with application.app.app_context():
             database.close_db()
             database.init_db()
+            for slug, name in (
+                ("low_risk", "Low risk"),
+                ("medium_risk", "Medium risk"),
+                ("high_risk", "High risk"),
+            ):
+                parsed = parse_strategy_csv(
+                    (
+                        "Strategy,Category,Asset,Ticker,Allocation\n"
+                        f"{name},US stocks,Example fund,EXAMPLE,100.00%\n"
+                    ).encode(),
+                    f"{slug}.csv",
+                )
+                database.create_ira_strategy(parsed, slug, f"{slug}.csv")
         self.client = application.app.test_client()
         self.csrf = "test-csrf-token"
         with self.client.session_transaction() as session:
             session["csrf_token"] = self.csrf
 
     def tearDown(self):
-        application.STRATEGIES_DIR = self.original_strategies_dir
         self.temporary.cleanup()
 
     def test_spending_pages_load(self):
         for path in (
-            "/ira/strategies/low_risk",
+            "/ira/analyzer/low_risk",
             "/spending/analyzer",
             "/spending/statements",
             "/spending/filters",
@@ -69,15 +68,18 @@ class AppFlowTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertIn(b"NestLedger", response.data)
                 self.assertIn(b'class="brand" href="/">NestLedger</a>', response.data)
+                self.assertIn(b'href="/ira/analyzer"', response.data)
                 self.assertIn(b'href="/ira/strategies"', response.data)
                 self.assertIn(b'href="/spending/analyzer"', response.data)
                 self.assertIn(b'href="/spending/statements"', response.data)
                 self.assertIn(b'href="/spending/filters"', response.data)
                 self.assertIn(b">Analyzer</a>", response.data)
                 self.assertIn(b'class="nav-dropdown"', response.data)
-                self.assertIn(b'href="/ira/strategies/low_risk"', response.data)
-                self.assertIn(b'href="/ira/strategies/medium_risk"', response.data)
-                self.assertIn(b'href="/ira/strategies/high_risk"', response.data)
+
+        analyzer_page = self.client.get("/ira/analyzer/low_risk").data
+        self.assertIn(b'href="/ira/analyzer/low_risk"', analyzer_page)
+        self.assertIn(b'href="/ira/analyzer/medium_risk"', analyzer_page)
+        self.assertIn(b'href="/ira/analyzer/high_risk"', analyzer_page)
 
         statements_page = self.client.get("/spending/statements").data
         self.assertIn(b'id="statementDropZone"', statements_page)
@@ -89,21 +91,26 @@ class AppFlowTests(unittest.TestCase):
         self.assertEqual(DEFAULT_INSTANCE_PATH, expected_data_path)
         self.assertEqual(DEFAULT_DATABASE_PATH, expected_data_path / "nestledger.db")
         self.assertEqual(DEFAULT_STATEMENTS_PATH, expected_data_path / "statements")
-        self.assertEqual(DEFAULT_STRATEGIES_PATH, expected_data_path / "strategies")
 
     def test_missing_strategies_are_a_valid_first_run(self):
-        with patch.object(
-            application, "STRATEGIES_DIR", Path(self.temporary.name) / "missing"
-        ):
+        with application.app.app_context():
+            for strategy in database.list_ira_strategies():
+                database.delete_ira_strategy(strategy["id"])
             response = self.client.get("/ira/strategies")
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b"No valid portfolios were found", response.data)
-        self.assertIn(b"data/strategies/", response.data)
+        self.assertIn(b"No strategies yet", response.data)
+        self.assertIn(b"Import your first strategy", response.data)
+        analyzer = self.client.get("/ira/analyzer")
+        self.assertEqual(analyzer.status_code, 200)
+        self.assertIn(b"Import a strategy before using", analyzer.data)
 
     def test_section_templates_extend_shared_base(self):
         templates = Path(application.__file__).resolve().parent / "templates"
         page_templates = (
             templates / "ira_strategies" / "index.html",
+            templates / "ira_strategies" / "manage.html",
+            templates / "ira_strategies" / "import.html",
+            templates / "ira_strategies" / "edit.html",
             templates / "spending" / "index.html",
             templates / "spending" / "filters.html",
             templates / "spending" / "statements" / "import.html",
@@ -114,9 +121,102 @@ class AppFlowTests(unittest.TestCase):
             with self.subTest(template=template):
                 self.assertTrue(template.read_text().startswith('{% extends "base.html" %}'))
         self.assertFalse((templates / "index.html").exists())
-        strategy_page = self.client.get("/ira/strategies/low_risk").data
+        strategy_page = self.client.get("/ira/analyzer/low_risk").data
         self.assertIn(b'href="/static/app.css"', strategy_page)
         self.assertIn(b'href="/static/ira_strategies.css"', strategy_page)
+
+    def test_strategy_import_replace_edit_and_delete(self):
+        csv_content = (
+            b"Strategy,Category,Asset,Ticker,Allocation\n"
+            b"Custom plan,Bonds,Treasury fund,TEST,100.00%\n"
+        )
+        imported = self.client.post(
+            "/ira/strategies/import",
+            data={
+                "csrf_token": self.csrf,
+                "strategy": (io.BytesIO(csv_content), "custom.csv"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(imported.status_code, 302)
+        self.assertTrue(imported.headers["Location"].endswith("/ira/analyzer/custom-plan"))
+        with application.app.app_context():
+            strategy = database.get_ira_strategy_by_name("Custom plan")
+            self.assertEqual(strategy["source_filename"], "custom.csv")
+            strategy_id = strategy["id"]
+            slug = strategy["slug"]
+
+        conflict = self.client.post(
+            "/ira/strategies/import",
+            data={
+                "csrf_token": self.csrf,
+                "strategy": (io.BytesIO(csv_content), "again.csv"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertIn(f"replace={strategy_id}", conflict.headers["Location"])
+
+        replacement_content = (
+            b"Strategy,Category,Asset,Ticker,Allocation\n"
+            b"Custom plan,Stocks,Index fund,INDEX,60.00%\n"
+            b"Custom plan,Bonds,Treasury fund,BOND,40.00%\n"
+        )
+        replaced = self.client.post(
+            f"/ira/strategies/import?replace={strategy_id}",
+            data={
+                "csrf_token": self.csrf,
+                "replace": str(strategy_id),
+                "strategy": (io.BytesIO(replacement_content), "replacement.csv"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(replaced.status_code, 302)
+        with application.app.app_context():
+            strategy = database.get_ira_strategy(strategy_id)
+            self.assertEqual(strategy["slug"], slug)
+            self.assertEqual(len(strategy["holdings"]), 2)
+
+        invalid_edit = self.client.post(
+            f"/ira/strategies/{strategy_id}/edit",
+            data={
+                "csrf_token": self.csrf,
+                "name": "Unsaved custom name",
+                "category": ["Stocks"],
+                "asset": ["Unsaved fund"],
+                "ticker": ["TEST"],
+                "allocation": ["90.00"],
+            },
+        )
+        self.assertEqual(invalid_edit.status_code, 200)
+        self.assertIn(b"Unsaved custom name", invalid_edit.data)
+        self.assertIn(b"Unsaved fund", invalid_edit.data)
+        with application.app.app_context():
+            self.assertEqual(database.get_ira_strategy(strategy_id)["name"], "Custom plan")
+
+        edited = self.client.post(
+            f"/ira/strategies/{strategy_id}/edit",
+            data={
+                "csrf_token": self.csrf,
+                "name": "Custom retirement plan",
+                "category": ["Stocks", "Cash"],
+                "asset": ["Index fund", "Money market"],
+                "ticker": ["INDEX", ""],
+                "allocation": ["75.00", "25.00"],
+            },
+        )
+        self.assertEqual(edited.status_code, 302)
+        with application.app.app_context():
+            strategy = database.get_ira_strategy(strategy_id)
+            self.assertEqual(strategy["name"], "Custom retirement plan")
+            self.assertEqual(strategy["slug"], slug)
+
+        deleted = self.client.post(
+            f"/ira/strategies/{strategy_id}/delete",
+            data={"csrf_token": self.csrf},
+        )
+        self.assertEqual(deleted.headers["Location"], "/ira/strategies")
+        with application.app.app_context():
+            self.assertIsNone(database.get_ira_strategy(strategy_id))
 
     @patch("nestledger.app.parse_statement")
     @patch("nestledger.app.extract_pdf_text")

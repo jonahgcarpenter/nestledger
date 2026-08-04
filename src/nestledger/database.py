@@ -99,6 +99,36 @@ CREATE TABLE IF NOT EXISTS merchant_rules (
     CHECK(category_id IS NOT NULL OR excluded = 1)
 );
 
+CREATE TABLE IF NOT EXISTS ira_strategies (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    slug TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    source_filename TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ira_strategy_categories (
+    id INTEGER PRIMARY KEY,
+    strategy_id INTEGER NOT NULL REFERENCES ira_strategies(id) ON DELETE CASCADE,
+    name TEXT NOT NULL COLLATE NOCASE,
+    position INTEGER NOT NULL CHECK(position >= 0),
+    UNIQUE(strategy_id, name),
+    UNIQUE(strategy_id, position)
+);
+
+CREATE TABLE IF NOT EXISTS ira_strategy_holdings (
+    id INTEGER PRIMARY KEY,
+    category_id INTEGER NOT NULL
+        REFERENCES ira_strategy_categories(id) ON DELETE CASCADE,
+    asset TEXT NOT NULL,
+    ticker TEXT NOT NULL DEFAULT '',
+    allocation_basis_points INTEGER NOT NULL
+        CHECK(allocation_basis_points >= 0 AND allocation_basis_points <= 10000),
+    position INTEGER NOT NULL CHECK(position >= 0),
+    UNIQUE(category_id, position)
+);
+
 CREATE INDEX IF NOT EXISTS idx_imports_status ON imports(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_import_order
     ON transactions(import_id, source_row);
@@ -107,6 +137,10 @@ CREATE INDEX IF NOT EXISTS idx_transactions_category ON transactions(category_id
 CREATE INDEX IF NOT EXISTS idx_transactions_review ON transactions(needs_review)
     WHERE needs_review = 1;
 CREATE INDEX IF NOT EXISTS idx_rules_category ON merchant_rules(category_id);
+CREATE INDEX IF NOT EXISTS idx_ira_categories_strategy
+    ON ira_strategy_categories(strategy_id, position);
+CREATE INDEX IF NOT EXISTS idx_ira_holdings_category
+    ON ira_strategy_holdings(category_id, position);
 """
 
 
@@ -244,6 +278,189 @@ def update_category(category_id, name):
 def delete_category(category_id):
     with get_db() as db:
         return db.execute("DELETE FROM categories WHERE id = ?", (category_id,)).rowcount == 1
+
+
+def list_ira_strategies():
+    return get_db().execute(
+        """SELECT s.*, COUNT(h.id) AS holding_count
+           FROM ira_strategies s
+           LEFT JOIN ira_strategy_categories c ON c.strategy_id = s.id
+           LEFT JOIN ira_strategy_holdings h ON h.category_id = c.id
+           GROUP BY s.id
+           ORDER BY s.name COLLATE NOCASE, s.id"""
+    ).fetchall()
+
+
+def get_ira_strategy(strategy_id):
+    strategy = get_db().execute(
+        "SELECT * FROM ira_strategies WHERE id = ?", (strategy_id,)
+    ).fetchone()
+    return _hydrate_ira_strategy(strategy)
+
+
+def get_ira_strategy_by_slug(slug):
+    strategy = get_db().execute(
+        "SELECT * FROM ira_strategies WHERE slug = ? COLLATE NOCASE", (slug,)
+    ).fetchone()
+    return _hydrate_ira_strategy(strategy)
+
+
+def get_ira_strategy_by_name(name):
+    return get_db().execute(
+        "SELECT * FROM ira_strategies WHERE name = ? COLLATE NOCASE", (name,)
+    ).fetchone()
+
+
+def _hydrate_ira_strategy(strategy):
+    if strategy is None:
+        return None
+    rows = get_db().execute(
+        """SELECT c.id AS category_id, c.name AS category_name,
+                  c.position AS category_position, h.id AS holding_id,
+                  h.asset, h.ticker, h.allocation_basis_points,
+                  h.position AS holding_position
+           FROM ira_strategy_categories c
+           JOIN ira_strategy_holdings h ON h.category_id = c.id
+           WHERE c.strategy_id = ?
+           ORDER BY c.position, h.position""",
+        (strategy["id"],),
+    ).fetchall()
+    categories = []
+    category_lookup = {}
+    holdings = []
+    for row in rows:
+        category = category_lookup.get(row["category_id"])
+        if category is None:
+            category = {
+                "id": row["category_id"],
+                "name": row["category_name"],
+                "allocation": 0.0,
+                "holdings": [],
+            }
+            category_lookup[row["category_id"]] = category
+            categories.append(category)
+        holding = {
+            "id": row["holding_id"],
+            "category": row["category_name"],
+            "asset": row["asset"],
+            "ticker": row["ticker"],
+            "allocation_bps": row["allocation_basis_points"],
+            "allocation": row["allocation_basis_points"] / 100,
+        }
+        category["holdings"].append(holding)
+        category["allocation"] += holding["allocation"]
+        holdings.append(holding)
+    return {
+        "id": strategy["id"],
+        "name": strategy["name"],
+        "strategy": strategy["name"],
+        "slug": strategy["slug"],
+        "source_filename": strategy["source_filename"],
+        "created_at": strategy["created_at"],
+        "updated_at": strategy["updated_at"],
+        "categories": categories,
+        "category_groups": categories,
+        "holdings": holdings,
+    }
+
+
+def _insert_ira_strategy_rows(db, strategy_id, parsed_strategy):
+    for category_position, category in enumerate(parsed_strategy.categories):
+        category_id = db.execute(
+            """INSERT INTO ira_strategy_categories(strategy_id, name, position)
+               VALUES (?, ?, ?)""",
+            (strategy_id, category.name, category_position),
+        ).lastrowid
+        db.executemany(
+            """INSERT INTO ira_strategy_holdings(
+                   category_id, asset, ticker, allocation_basis_points, position
+               ) VALUES (?, ?, ?, ?, ?)""",
+            (
+                (category_id, holding.asset, holding.ticker,
+                 holding.allocation_bps, position)
+                for position, holding in enumerate(category.holdings)
+            ),
+        )
+
+
+def _validate_ira_strategy(parsed_strategy):
+    if not parsed_strategy.name or len(parsed_strategy.name) > 120:
+        raise ValueError("strategy name must contain 1 to 120 characters")
+    category_names = set()
+    holding_count = 0
+    total_bps = 0
+    for category in parsed_strategy.categories:
+        category_key = category.name.casefold()
+        if not category.name or len(category.name) > 120 or category_key in category_names:
+            raise ValueError("strategy categories must have unique names")
+        category_names.add(category_key)
+        if not category.holdings:
+            raise ValueError("strategy categories must contain holdings")
+        for holding in category.holdings:
+            if not holding.asset or len(holding.asset) > 120 or len(holding.ticker) > 32:
+                raise ValueError("strategy holdings contain invalid text")
+            if not 0 <= holding.allocation_bps <= 10000:
+                raise ValueError("strategy allocations must be between 0 and 100 percent")
+            holding_count += 1
+            total_bps += holding.allocation_bps
+    if not category_names or holding_count > 500 or len(category_names) > 100:
+        raise ValueError("strategy must contain between 1 and 500 holdings")
+    if total_bps != 10000:
+        raise ValueError("strategy allocations must total 100.00 percent")
+
+
+def create_ira_strategy(parsed_strategy, slug, source_filename=None):
+    _validate_ira_strategy(parsed_strategy)
+    db = get_db()
+    with db:
+        strategy_id = db.execute(
+            """INSERT INTO ira_strategies(name, slug, source_filename)
+               VALUES (?, ?, ?)""",
+            (parsed_strategy.name, slug, source_filename),
+        ).lastrowid
+        _insert_ira_strategy_rows(db, strategy_id, parsed_strategy)
+    return strategy_id
+
+
+def replace_ira_strategy(
+    strategy_id, parsed_strategy, *, source_filename=None, update_source=False
+):
+    _validate_ira_strategy(parsed_strategy)
+    db = get_db()
+    with db:
+        strategy = db.execute(
+            "SELECT 1 FROM ira_strategies WHERE id = ?", (strategy_id,)
+        ).fetchone()
+        if strategy is None:
+            return False
+        assignments = "name = ?, updated_at = CURRENT_TIMESTAMP"
+        params = [parsed_strategy.name]
+        if update_source:
+            assignments += ", source_filename = ?"
+            params.append(source_filename)
+        params.append(strategy_id)
+        db.execute(
+            f"UPDATE ira_strategies SET {assignments} WHERE id = ?", params
+        )
+        db.execute(
+            "DELETE FROM ira_strategy_categories WHERE strategy_id = ?",
+            (strategy_id,),
+        )
+        _insert_ira_strategy_rows(db, strategy_id, parsed_strategy)
+    return True
+
+
+def delete_ira_strategy(strategy_id):
+    with get_db() as db:
+        return db.execute(
+            "DELETE FROM ira_strategies WHERE id = ?", (strategy_id,)
+        ).rowcount == 1
+
+
+def ira_strategy_slug_exists(slug):
+    return get_db().execute(
+        "SELECT 1 FROM ira_strategies WHERE slug = ? COLLATE NOCASE", (slug,)
+    ).fetchone() is not None
 
 
 def get_import(import_id):

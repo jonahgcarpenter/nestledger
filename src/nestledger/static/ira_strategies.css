@@ -444,6 +444,63 @@
       color: #f3aa94;
     }
 
+    .management-header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 2rem;
+      margin-bottom: 2rem;
+    }
+
+    .management-header .intro { margin-bottom: 0; }
+    .strategy-switcher {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      margin-bottom: 2rem;
+      padding-bottom: 1.25rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .strategy-list { display: grid; gap: 1rem; }
+    .strategy-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 2rem;
+      padding: 1.5rem;
+    }
+    .strategy-card h2 { font-size: clamp(1.6rem, 3vw, 2.4rem); }
+    .strategy-card .hint { margin: 0.65rem 0 0; }
+    .strategy-empty { padding: clamp(1.5rem, 5vw, 4rem); }
+    .strategy-empty h2 { margin-bottom: 1rem; }
+    .strategy-name-field { margin: 2rem 0 1rem; padding: 1.5rem; }
+    .editor-panel { padding: clamp(1rem, 3vw, 1.5rem); }
+    .holding-editor-head,
+    .editor-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .holding-editor-head { margin-bottom: 1.25rem; }
+    .holding-editor-head h2 { font-size: clamp(1.6rem, 3vw, 2.4rem); }
+    .holding-editor-rows { display: grid; gap: 0.75rem; }
+    .holding-editor-row {
+      display: grid;
+      grid-template-columns: 1fr 1.6fr 0.7fr 0.7fr auto;
+      align-items: end;
+      gap: 0.75rem;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(9, 14, 11, 0.42);
+    }
+    .holding-editor-row input { min-height: 48px; }
+    .holding-editor-row .button { min-height: 48px; }
+    .editor-footer { margin-top: 1.25rem; }
+    .editor-footer .hint strong { color: var(--green); }
+    .editor-footer .hint strong.error-tag { color: #f3aa94; }
+
     footer { margin-top: 3rem; color: var(--muted); font-size: 0.78rem; line-height: 1.5; }
 
     /* Large screens */
@@ -476,6 +533,8 @@
       .chart-details { flex-basis: auto; width: 100%; }
       .legend { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .tools { margin-top: 4.5rem; }
+      .holding-editor-row { grid-template-columns: 1fr 1.5fr 0.7fr 0.7fr; }
+      .holding-editor-row .remove-holding { grid-column: 1 / -1; justify-self: end; }
     }
 
     /* Small screens and phones */
@@ -510,6 +569,12 @@
       .category-header th { padding-inline: 0.8rem; }
       .allocation-results .result-category th { padding-inline: 0.8rem; }
       .allocation-results table { min-width: 560px; }
+      .management-header,
+      .strategy-card,
+      .holding-editor-head,
+      .editor-footer { align-items: stretch; flex-direction: column; }
+      .holding-editor-row { grid-template-columns: 1fr; }
+      .holding-editor-row .remove-holding { grid-column: auto; justify-self: start; }
     }
 
     @media (max-width: 480px) {

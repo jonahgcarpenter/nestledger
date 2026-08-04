@@ -19,7 +19,7 @@ COPY pyproject.toml README.md ./
 COPY src/ ./src/
 RUN pip install --no-cache-dir .
 
-RUN mkdir --parents /app/data/statements /app/data/strategies \
+RUN mkdir --parents /app/data/statements \
     && chown --recursive appuser:appuser /app/data
 
 USER appuser
