@@ -6,7 +6,7 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
-from statement_import import (
+from nestledger.statement_import import (
     InvalidPDFError,
     UnsupportedStatementError,
     detect_issuer,
@@ -29,7 +29,7 @@ class PDFValidationTests(unittest.TestCase):
             with self.assertRaises(InvalidPDFError):
                 validate_pdf(path)
 
-    @patch("statement_import._run")
+    @patch("nestledger.statement_import._run")
     def test_embedded_text_is_preferred(self, run):
         def command(args, _timeout, _tool):
             Path(args[-1]).write_text(
@@ -43,7 +43,7 @@ class PDFValidationTests(unittest.TestCase):
         self.assertIn("TEST MERCHANT", result.text)
         self.assertEqual(run.call_count, 1)
 
-    @patch("statement_import._run")
+    @patch("nestledger.statement_import._run")
     def test_ocr_fallback_combines_rendered_pages(self, run):
         def command(args, _timeout, _tool):
             if args[0] == "pdftotext":

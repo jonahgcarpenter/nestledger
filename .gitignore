@@ -1,8 +1,11 @@
 .venv/
 __pycache__/
 *.py[cod]
+*.egg-info/
+build/
+dist/
 instance/
-data/
+data/*
 uploads/
 *.pdf
 .pytest_cache/

@@ -24,8 +24,8 @@ from flask import (
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
-import database
-from statement_import import (
+from . import database
+from .statement_import import (
     StatementImportError,
     extract_pdf_text,
     normalize_merchant,
@@ -33,11 +33,11 @@ from statement_import import (
 )
 
 
-BASE_DIR = Path(__file__).resolve().parent
-STRATEGIES_DIR = BASE_DIR / "strategies"
+PROJECT_ROOT = Path(os.environ.get("NESTLEDGER_ROOT", Path.cwd())).resolve()
+STRATEGIES_DIR = PROJECT_ROOT / "data" / "strategies"
 REQUIRED_COLUMNS = {"Strategy", "Category", "Asset", "Ticker", "Allocation"}
 
-app = Flask(__name__, instance_path=str(BASE_DIR / "data"))
+app = Flask(__name__, instance_path=str(PROJECT_ROOT / "data"))
 app.config.from_mapping(
     DATABASE=str(Path(app.instance_path) / "nestledger.db"),
     STATEMENTS_DIR=str(Path(app.instance_path) / "statements"),
@@ -694,7 +694,3 @@ def remove_category(category_id):
 def upload_too_large(_error):
     flash("The combined upload is larger than the 128 MB request limit.", "error")
     return redirect(url_for("import_statement_pdf"))
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
