@@ -14,7 +14,7 @@
       <div class="chart-details">
         <p class="eyebrow">At a glance</p>
         <h2>Category mix</h2>
-        <p class="hint">Each color maps to a category. Hover over the chart or legend for its share of spending.</p>
+        <p class="hint">Each color maps to a category. Hover, focus, or tap a legend item for its share of spending.</p>
         <div id="categoryLegend" class="legend"></div>
       </div>
       <div class="chart-stage">
@@ -32,9 +32,10 @@
       <div><label for="category">Category</label><select id="category" name="category"><option value="">All categories</option>{% for category in categories %}<option value="{{ category.id }}"{% if filters.category == category.id %} selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></div>
       <div><label for="from">From</label><input id="from" name="from" type="date" value="{{ filters.from }}"></div>
       <div><label for="to">To</label><input id="to" name="to" type="date" value="{{ filters.to }}"></div>
+      <button class="button primary" type="submit">Apply</button>
     </form>
-    <div class="panel table-wrap panel-offset">
-      <table>
+    <div class="panel table-wrap panel-offset" tabindex="0" role="region" aria-label="Confirmed transactions">
+      <table class="data-table">
         <thead><tr><th>Date</th><th>Card</th><th>Merchant</th><th>Category</th><th class="money">Amount</th></tr></thead>
         <tbody>
           {% for row in transactions %}
@@ -165,10 +166,13 @@
   function buildLegend() {
     const legend = document.getElementById("categoryLegend");
     legend.replaceChildren(...categories.map((category, index) => {
-      const item = document.createElement("div");
+      const item = document.createElement("button");
       item.className = "legend-item";
+      item.type = "button";
       item.addEventListener("pointerenter", () => setHoveredSlice(index));
       item.addEventListener("pointerleave", () => setHoveredSlice(-1));
+      item.addEventListener("focus", () => setHoveredSlice(index));
+      item.addEventListener("blur", () => setHoveredSlice(-1));
       const swatch = document.createElement("span");
       swatch.className = "legend-swatch";
       swatch.style.background = palette[index % palette.length];
@@ -199,9 +203,17 @@
     document.getElementById("tooltipCategory").textContent = match.category.name;
     document.getElementById("tooltipValue").textContent = `${money.format(match.category.amount_cents / 100)} · ${(match.category.amount_cents / total * 100).toFixed(1)}%`;
     const panelRect = canvas.parentElement.getBoundingClientRect();
-    tooltip.style.left = `${event.clientX - panelRect.left}px`;
-    tooltip.style.top = `${event.clientY - panelRect.top}px`;
     tooltip.hidden = false;
+    const tooltipX = Math.max(0, Math.min(
+      event.clientX - panelRect.left,
+      canvas.parentElement.clientWidth - tooltip.offsetWidth - 12
+    ));
+    const tooltipY = Math.max(
+      tooltip.offsetHeight / 2,
+      Math.min(event.clientY - panelRect.top, canvas.parentElement.clientHeight - tooltip.offsetHeight / 2)
+    );
+    tooltip.style.left = `${tooltipX}px`;
+    tooltip.style.top = `${tooltipY}px`;
   });
   canvas.addEventListener("pointerleave", () => { tooltip.hidden = true; setHoveredSlice(-1); });
   drawChart();

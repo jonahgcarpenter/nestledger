@@ -2,15 +2,15 @@
   <a class="brand" href="{{ url_for('index') }}">NestLedger</a>
   <div class="nav-links">
     <div class="nav-menu">
-      <a href="{{ url_for('ira_analyzer') }}"{% if request.endpoint in ('index', 'ira_analyzer', 'strategies', 'strategy', 'import_strategy', 'review_strategy_import', 'delete_strategy_import', 'edit_strategy', 'delete_strategy') %} class="active" aria-current="page"{% endif %}>IRA <span class="nav-caret" aria-hidden="true">&#9662;</span></a>
-      <div class="nav-dropdown" aria-label="Investment strategies">
+      <a href="{{ url_for('ira_analyzer') }}" aria-controls="iraNavMenu" data-nav-trigger{% if request.endpoint in ('index', 'ira_analyzer', 'strategies', 'strategy', 'import_strategy', 'review_strategy_import', 'delete_strategy_import', 'edit_strategy', 'delete_strategy') %} class="active"{% endif %}>IRA <span class="nav-caret" aria-hidden="true">&#9662;</span></a>
+      <div class="nav-dropdown" id="iraNavMenu" aria-label="Investment strategies">
         <a href="{{ url_for('ira_analyzer') }}"{% if request.endpoint in ('ira_analyzer', 'strategy') %} class="active" aria-current="page"{% endif %}>Analyzer</a>
         <a href="{{ url_for('strategies') }}"{% if request.endpoint in ('strategies', 'import_strategy', 'review_strategy_import', 'delete_strategy_import', 'edit_strategy', 'delete_strategy') %} class="active" aria-current="page"{% endif %}>Strategies</a>
       </div>
     </div>
     <div class="nav-menu">
-      <a href="{{ url_for('spending') }}"{% if request.endpoint in ('spending', 'import_statement_pdf', 'review_import', 'view_statement_pdf', 'merchant_filters', 'add_category', 'rename_category', 'remove_category') %} class="active" aria-current="page"{% endif %}>Spending <span class="nav-caret" aria-hidden="true">&#9662;</span></a>
-      <div class="nav-dropdown" aria-label="Spending tools">
+      <a href="{{ url_for('spending') }}" aria-controls="spendingNavMenu" data-nav-trigger{% if request.endpoint in ('spending', 'import_statement_pdf', 'review_import', 'view_statement_pdf', 'merchant_filters', 'add_category', 'rename_category', 'remove_category') %} class="active"{% endif %}>Spending <span class="nav-caret" aria-hidden="true">&#9662;</span></a>
+      <div class="nav-dropdown" id="spendingNavMenu" aria-label="Spending tools">
         <a href="{{ url_for('spending') }}"{% if request.endpoint == 'spending' %} class="active" aria-current="page"{% endif %}>Analyzer</a>
         <a href="{{ url_for('import_statement_pdf') }}"{% if request.endpoint in ('import_statement_pdf', 'review_import', 'view_statement_pdf') %} class="active" aria-current="page"{% endif %}>Statements</a>
         <a href="{{ url_for('merchant_filters') }}"{% if request.endpoint in ('merchant_filters', 'add_category', 'rename_category', 'remove_category') %} class="active" aria-current="page"{% endif %}>Filters</a>

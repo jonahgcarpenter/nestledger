@@ -32,7 +32,7 @@
           <div class="chart-details">
             <p class="eyebrow">At a glance</p>
             <h3>Allocation mix</h3>
-            <p>Each color maps to a holding in the strategy. Hover over the chart for a closer look.</p>
+            <p>Each color maps to a holding in the strategy. Hover, focus, or tap a legend item for a closer look.</p>
             <div id="chartLegend" class="legend"></div>
           </div>
           <div class="chart-stage">
@@ -44,7 +44,7 @@
           </div>
         </div>
 
-        <div class="panel table-wrap">
+        <div class="panel table-wrap" tabindex="0" role="region" aria-label="Portfolio holdings">
           <table>
             <colgroup>
               <col>
@@ -311,9 +311,17 @@
           setHoveredSlice(index);
           ticker.textContent = holding.ticker || "Cash";
           allocation.textContent = `${holding.allocation.toFixed(2)}%`;
-          tooltip.style.left = `${event.clientX - panelRect.left}px`;
-          tooltip.style.top = `${event.clientY - panelRect.top}px`;
           tooltip.hidden = false;
+          const tooltipX = Math.max(0, Math.min(
+            event.clientX - panelRect.left,
+            panel.clientWidth - tooltip.offsetWidth - 12
+          ));
+          const tooltipY = Math.max(
+            tooltip.offsetHeight / 2,
+            Math.min(event.clientY - panelRect.top, panel.clientHeight - tooltip.offsetHeight / 2)
+          );
+          tooltip.style.left = `${tooltipX}px`;
+          tooltip.style.top = `${tooltipY}px`;
           canvas.style.cursor = "crosshair";
         });
 
@@ -327,11 +335,14 @@
       function buildLegend() {
         const legend = document.getElementById("chartLegend");
         legend.replaceChildren(...holdings.map((holding, index) => {
-          const item = document.createElement("div");
+          const item = document.createElement("button");
           item.className = "legend-item";
+          item.type = "button";
           item.title = `${holding.asset}: ${holding.allocation.toFixed(2)}%`;
           item.addEventListener("pointerenter", () => setHoveredSlice(index));
           item.addEventListener("pointerleave", () => setHoveredSlice(-1));
+          item.addEventListener("focus", () => setHoveredSlice(index));
+          item.addEventListener("blur", () => setHoveredSlice(-1));
 
           const swatch = document.createElement("span");
           swatch.className = "legend-swatch";
@@ -340,10 +351,10 @@
           const copy = document.createElement("span");
           copy.className = "legend-copy";
           const ticker = document.createElement("strong");
-          ticker.className = "legend-ticker";
+          ticker.className = "legend-name";
           ticker.textContent = holding.ticker || "Cash";
           const name = document.createElement("span");
-          name.className = "legend-name";
+          name.className = "legend-count";
           name.textContent = holding.asset;
           copy.append(ticker, name);
 

@@ -12,8 +12,8 @@
       <button class="button primary" type="submit">Save filter</button>
     </form>
 
-    <div class="panel table-wrap panel-offset">
-      <table><thead><tr><th>Pattern</th><th>Match</th><th>Category</th><th>Excluded</th><th></th></tr></thead><tbody>
+    <div class="panel table-wrap panel-offset" tabindex="0" role="region" aria-label="Merchant filters">
+      <table class="data-table"><thead><tr><th>Pattern</th><th>Match</th><th>Category</th><th>Excluded</th><th></th></tr></thead><tbody>
         {% for filter in filters %}
           <tr><td class="merchant">{{ filter.pattern }}</td><td>{{ filter.match_type }}</td><td>{{ filter.category_name or "No change" }}</td><td>{{ "Yes" if filter.excluded else "No" }}</td><td><form action="{{ url_for('remove_filter', filter_id=filter.id) }}" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button danger" type="submit">Delete</button></form></td></tr>
         {% else %}<tr><td class="empty" colspan="5">No filters yet. New imports will remain uncategorized until filters are configured.</td></tr>{% endfor %}
@@ -28,7 +28,7 @@
       <div><label for="category_name">New category</label><input id="category_name" name="name" required placeholder="Education"></div>
       <button class="button primary" type="submit">Add category</button>
     </form>
-    <div class="panel table-wrap panel-offset">
+    <div class="panel table-wrap panel-offset" tabindex="0" role="region" aria-label="Spending categories">
       <table><thead><tr><th>Category</th><th>Actions</th></tr></thead><tbody>
         {% for category in categories %}
           <tr data-category-row>

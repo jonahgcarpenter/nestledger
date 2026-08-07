@@ -32,8 +32,8 @@
     <div class="section-head">
       <div><p class="eyebrow">Previous submissions</p><h2>Statement history</h2></div>
     </div>
-    <div class="panel table-wrap">
-      <table>
+    <div class="panel table-wrap" tabindex="0" role="region" aria-label="Statement import history">
+      <table class="data-table">
         <thead><tr><th>Card Name</th><th>Issuer</th><th>Period</th><th>Status</th><th>Original</th></tr></thead>
         <tbody>
           {% for item in imports %}
