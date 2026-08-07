@@ -20,7 +20,7 @@
   <form class="panel upload" method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if replacement %}<input type="hidden" name="replace" value="{{ replacement.id }}">{% endif %}
-    <label class="drop-zone" for="strategyCsv">
+    <label class="drop-zone" id="strategyDropZone" for="strategyCsv" tabindex="0">
       <strong>{% if replacement %}Choose replacement CSV{% else %}Choose strategy CSVs{% endif %}</strong>
       <span>UTF-8 CSV, up to 256 KiB and 500 holdings each</span>
       <span class="selected-files" id="strategyCsvName">No file selected</span>
@@ -37,8 +37,8 @@
       <div class="section-head">
         <div><p class="eyebrow">Awaiting confirmation</p><h2>Draft imports.</h2></div>
       </div>
-      <div class="panel table-wrap">
-        <table>
+      <div class="panel table-wrap" tabindex="0" role="region" aria-label="Strategy import drafts">
+        <table class="data-table">
           <thead><tr><th>Strategies</th><th>Created</th><th></th></tr></thead>
           <tbody>
             {% for draft in drafts %}
@@ -59,12 +59,48 @@
 {% block scripts %}
   <script>
     const input = document.getElementById("strategyCsv");
+    const dropZone = document.getElementById("strategyDropZone");
     const selectedFiles = document.getElementById("strategyCsvName");
-    input.addEventListener("change", () => {
+    let dragDepth = 0;
+
+    function showSelectedFiles() {
       const files = Array.from(input.files);
       selectedFiles.textContent = files.length
         ? files.map(file => file.name).join(", ")
         : "No file selected";
+    }
+
+    input.addEventListener("change", showSelectedFiles);
+    dropZone.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        input.click();
+      }
+    });
+    dropZone.addEventListener("dragenter", event => {
+      event.preventDefault();
+      dragDepth += 1;
+      dropZone.classList.add("dragging");
+    });
+    dropZone.addEventListener("dragover", event => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    });
+    dropZone.addEventListener("dragleave", () => {
+      dragDepth -= 1;
+      if (dragDepth <= 0) {
+        dragDepth = 0;
+        dropZone.classList.remove("dragging");
+      }
+    });
+    dropZone.addEventListener("drop", event => {
+      event.preventDefault();
+      dragDepth = 0;
+      dropZone.classList.remove("dragging");
+      if (event.dataTransfer.files.length) {
+        input.files = event.dataTransfer.files;
+        showSelectedFiles();
+      }
     });
   </script>
 {% endblock %}

@@ -17,6 +17,50 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+  <script>
+    const mobileNav = window.matchMedia("(max-width: 520px)");
+    const navMenus = Array.from(document.querySelectorAll(".nav-menu"));
+
+    function closeNavMenus(except = null) {
+      navMenus.forEach(menu => {
+        if (menu === except) return;
+        menu.classList.remove("open");
+        menu.querySelector("[data-nav-trigger]")?.setAttribute("aria-expanded", "false");
+      });
+    }
+
+    function syncNavMode() {
+      closeNavMenus();
+      navMenus.forEach(menu => {
+        const trigger = menu.querySelector("[data-nav-trigger]");
+        if (mobileNav.matches) trigger.setAttribute("aria-expanded", "false");
+        else trigger.removeAttribute("aria-expanded");
+      });
+    }
+
+    navMenus.forEach(menu => {
+      const trigger = menu.querySelector("[data-nav-trigger]");
+      trigger.addEventListener("click", event => {
+        if (!mobileNav.matches) return;
+        event.preventDefault();
+        const opening = !menu.classList.contains("open");
+        closeNavMenus(menu);
+        menu.classList.toggle("open", opening);
+        trigger.setAttribute("aria-expanded", String(opening));
+      });
+    });
+    document.addEventListener("pointerdown", event => {
+      if (mobileNav.matches && !event.target.closest(".nav-menu")) closeNavMenus();
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape" || !mobileNav.matches) return;
+      const openTrigger = document.querySelector(".nav-menu.open [data-nav-trigger]");
+      closeNavMenus();
+      openTrigger?.focus();
+    });
+    mobileNav.addEventListener("change", syncNavMode);
+    syncNavMode();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
