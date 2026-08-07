@@ -1,5 +1,6 @@
 import csv
 import hashlib
+import io
 import json
 import os
 import secrets
@@ -31,11 +32,10 @@ from .statement_import import (
     normalize_merchant,
     parse_statement,
 )
+from .strategy_import import MAX_FILE_SIZE, StrategyImportError, parse_strategy_csv
 
 
 PROJECT_ROOT = Path(os.environ.get("NESTLEDGER_ROOT", Path.cwd())).resolve()
-STRATEGIES_DIR = PROJECT_ROOT / "data" / "strategies"
-REQUIRED_COLUMNS = {"Strategy", "Category", "Asset", "Ticker", "Allocation"}
 
 app = Flask(__name__, instance_path=str(PROJECT_ROOT / "data"))
 app.config.from_mapping(
@@ -233,128 +233,291 @@ def _process_statement_upload(upload):
             temp_path.unlink(missing_ok=True)
 
 
-def load_portfolios():
-    portfolios = []
-    errors = []
+def _strategy_slug(name, reserved=()):
+    base = secure_filename(name).lower().replace("_", "-").strip("-") or "strategy"
+    slug = base[:100]
+    suffix = 2
+    reserved = set(reserved)
+    while database.ira_strategy_slug_exists(slug) or slug in reserved:
+        addition = f"-{suffix}"
+        slug = base[: 100 - len(addition)] + addition
+        suffix += 1
+    return slug
 
-    for csv_path in STRATEGIES_DIR.glob("*.csv"):
-        try:
-            with csv_path.open(newline="", encoding="utf-8-sig") as csv_file:
-                reader = csv.DictReader(csv_file)
-                if not reader.fieldnames or not REQUIRED_COLUMNS.issubset(reader.fieldnames):
-                    missing = sorted(REQUIRED_COLUMNS - set(reader.fieldnames or []))
-                    raise ValueError(f"missing columns: {', '.join(missing)}")
 
-                holdings = []
-                strategy = ""
-                for row_number, row in enumerate(reader, start=2):
-                    if row["Category"].strip().lower() == "total":
-                        continue
-
-                    strategy = strategy or row["Strategy"].strip()
-
-                    allocation_text = row["Allocation"].strip().removesuffix("%")
-                    try:
-                        allocation = float(allocation_text)
-                    except ValueError as error:
-                        raise ValueError(
-                            f"invalid allocation on row {row_number}"
-                        ) from error
-
-                    if allocation < 0:
-                        raise ValueError(f"negative allocation on row {row_number}")
-
-                    holdings.append(
-                        {
-                            "category": row["Category"].strip(),
-                            "asset": row["Asset"].strip(),
-                            "ticker": row["Ticker"].strip(),
-                            "allocation": allocation,
-                        }
-                    )
-
-                if not holdings:
-                    raise ValueError("no holdings found")
-
-                total = sum(holding["allocation"] for holding in holdings)
-                if abs(total - 100) > 0.01:
-                    raise ValueError(f"allocations total {total:.2f}%, not 100%")
-
-                strategy = strategy or csv_path.stem.replace("_", " ").title()
-                portfolios.append(
-                    {
-                        "slug": csv_path.stem,
-                        "strategy": strategy,
-                        "holdings": holdings,
-                    }
-                )
-        except (OSError, ValueError, csv.Error) as error:
-            errors.append(f"{csv_path.name}: {error}")
-
-    risk_order = {"low": 0, "medium": 1, "high": 2}
-    portfolios.sort(
-        key=lambda portfolio: (
-            risk_order.get(portfolio["strategy"].split()[0].lower(), 99),
-            portfolio["strategy"].lower(),
+def _parse_strategy_editor():
+    categories = request.form.getlist("category")
+    assets = request.form.getlist("asset")
+    tickers = request.form.getlist("ticker")
+    allocations = request.form.getlist("allocation")
+    if not categories or not (
+        len(categories) == len(assets) == len(tickers) == len(allocations)
+    ):
+        raise StrategyImportError("At least one complete holding row is required")
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow(("Strategy", "Category", "Asset", "Ticker", "Allocation"))
+    name = request.form.get("name", "")
+    writer.writerows(
+        (name, category, asset, ticker, allocation)
+        for category, asset, ticker, allocation in zip(
+            categories, assets, tickers, allocations
         )
     )
-    return portfolios, errors
+    return parse_strategy_csv(output.getvalue().encode(), "strategy.csv")
 
 
-@app.context_processor
-def navigation_strategies():
-    portfolios, _errors = load_portfolios()
-    return {"nav_strategies": portfolios}
+def _strategy_risk_score():
+    risk_score = request.form.get("risk_score", type=int)
+    if risk_score is None or not 1 <= risk_score <= 10:
+        raise StrategyImportError("Risk score must be a whole number from 1 to 10")
+    return risk_score
+
+
+def _strategy_risk_scores(count):
+    submitted = request.form.getlist("risk_score")
+    if len(submitted) != count:
+        raise StrategyImportError("Choose a risk score for each strategy CSV")
+    try:
+        risk_scores = [int(value) for value in submitted]
+    except (TypeError, ValueError) as exc:
+        raise StrategyImportError(
+            "Risk scores must be whole numbers from 1 to 10"
+        ) from exc
+    if any(not 1 <= risk_score <= 10 for risk_score in risk_scores):
+        raise StrategyImportError("Risk scores must be whole numbers from 1 to 10")
+    return risk_scores
+
+
+def _submitted_strategy_editor(selected):
+    categories = request.form.getlist("category")
+    assets = request.form.getlist("asset")
+    tickers = request.form.getlist("ticker")
+    allocations = request.form.getlist("allocation")
+    selected["name"] = request.form.get("name", "")
+    selected["risk_score"] = request.form.get("risk_score", "")
+    selected["holdings"] = [
+        {
+            "category": category,
+            "asset": asset,
+            "ticker": ticker,
+            "allocation": 0.0,
+            "allocation_input": allocation,
+        }
+        for category, asset, ticker, allocation in zip(
+            categories, assets, tickers, allocations
+        )
+    ]
+    return selected
 
 
 @app.get("/")
 def index():
-    return redirect(url_for("strategies"))
+    return redirect(url_for("ira_analyzer"))
+
+
+@app.get("/ira/analyzer")
+def ira_analyzer():
+    available = database.list_ira_strategies()
+    if available:
+        return redirect(url_for("strategy", slug=available[0]["slug"]))
+    return render_template(
+        "ira_strategies/index.html", portfolio=None, strategies=[]
+    )
 
 
 @app.get("/ira/strategies")
 def strategies():
-    portfolios, errors = load_portfolios()
-    if portfolios:
-        return redirect(url_for("strategy", slug=portfolios[0]["slug"]))
     return render_template(
-        "ira_strategies/index.html", portfolios=[], portfolio=None, errors=errors
+        "ira_strategies/manage.html", strategies=database.list_ira_strategies()
     )
 
 
-@app.get("/ira/strategies/<slug>")
-def strategy(slug):
-    portfolios, errors = load_portfolios()
-    selected = next((item for item in portfolios if item["slug"] == slug), None)
-    if selected is None:
+@app.route("/ira/strategies/import", methods=("GET", "POST"))
+def import_strategy():
+    replace_id = request.values.get("replace", type=int)
+    replacement = database.get_ira_strategy(replace_id) if replace_id else None
+    if replace_id and replacement is None:
+        abort(404)
+    if request.method == "POST":
+        uploads = [
+            uploaded
+            for uploaded in request.files.getlist("strategy")
+            if uploaded.filename
+        ]
+        if not uploads:
+            flash("Choose a strategy CSV to import.", "error")
+        elif replacement is not None and len(uploads) != 1:
+            flash("Choose one strategy CSV when replacing a strategy.", "error")
+        else:
+            try:
+                pending = []
+                for uploaded in uploads:
+                    filename = secure_filename(uploaded.filename) or "strategy.csv"
+                    content = uploaded.stream.read(MAX_FILE_SIZE + 1)
+                    pending.append((parse_strategy_csv(content, filename), filename))
+
+                if replacement is not None:
+                    parsed, _ = pending[0]
+                    if parsed.name.casefold() != replacement["name"].casefold():
+                        raise StrategyImportError(
+                            "The CSV strategy name must match the strategy being replaced"
+                        )
+
+                names = [parsed.name.casefold() for parsed, _ in pending]
+                if len(names) != len(set(names)):
+                    raise StrategyImportError(
+                        "Each CSV in a batch must contain a different strategy"
+                    )
+                conflicts = [
+                    database.get_ira_strategy_by_name(parsed.name)
+                    for parsed, _ in pending
+                ]
+                if replacement is not None:
+                    conflicts = []
+                conflicts = [conflict for conflict in conflicts if conflict is not None]
+                if len(pending) == 1 and conflicts:
+                    flash(
+                        "A strategy with that name exists. Review and confirm replacement.",
+                        "error",
+                    )
+                    return redirect(url_for("import_strategy", replace=conflicts[0]["id"]))
+                if conflicts:
+                    conflict_names = ", ".join(conflict["name"] for conflict in conflicts)
+                    raise StrategyImportError(
+                        f"These strategies already exist: {conflict_names}. "
+                        "Import or replace them separately."
+                    )
+                batch_id = database.create_ira_strategy_import_batch(
+                    pending,
+                    replacement_strategy_id=replacement["id"] if replacement else None,
+                )
+                flash("CSV validation passed. Add risk scores before importing.", "success")
+                return redirect(
+                    url_for("review_strategy_import", batch_id=batch_id)
+                )
+            except StrategyImportError as error:
+                flash(str(error), "error")
+            except sqlite3.IntegrityError:
+                flash("That strategy conflicts with an existing strategy.", "error")
+    return render_template(
+        "ira_strategies/import.html",
+        replacement=replacement,
+        drafts=[] if replacement else database.list_ira_strategy_import_batches(),
+    )
+
+
+@app.route("/ira/strategies/imports/<int:batch_id>", methods=("GET", "POST"))
+def review_strategy_import(batch_id):
+    batch = database.get_ira_strategy_import_batch(batch_id)
+    if batch is None:
         abort(404)
 
-    categories = {}
-    category_groups = {}
-    for holding in selected["holdings"]:
-        categories[holding["category"]] = (
-            categories.get(holding["category"], 0) + holding["allocation"]
-        )
-        category_groups.setdefault(holding["category"], []).append(holding)
+    if request.method == "POST":
+        try:
+            risk_scores = _strategy_risk_scores(len(batch["items"]))
+            if batch["replacement_strategy_id"] is None:
+                conflicts = [
+                    database.get_ira_strategy_by_name(item["name"])
+                    for item in batch["items"]
+                ]
+                conflicts = [item for item in conflicts if item is not None]
+                if conflicts:
+                    names = ", ".join(item["name"] for item in conflicts)
+                    raise StrategyImportError(
+                        f"These strategies now exist: {names}. Cancel this draft and "
+                        "replace them separately."
+                    )
 
-    selected["categories"] = [
-        {"name": name, "allocation": allocation}
-        for name, allocation in categories.items()
-    ]
-    selected["category_groups"] = [
-        {
-            "name": name,
-            "allocation": categories[name],
-            "holdings": holdings,
-        }
-        for name, holdings in category_groups.items()
-    ]
+            reserved_slugs = set()
+            strategies_to_confirm = []
+            for item, risk_score in zip(batch["items"], risk_scores):
+                slug = ""
+                if batch["replacement_strategy_id"] is None:
+                    slug = _strategy_slug(item["name"], reserved_slugs)
+                    reserved_slugs.add(slug)
+                strategies_to_confirm.append(
+                    (
+                        item["id"],
+                        item["parsed"],
+                        slug,
+                        item["source_filename"],
+                        risk_score,
+                    )
+                )
+            database.confirm_ira_strategy_import_batch(
+                batch_id, strategies_to_confirm
+            )
+            if batch["replacement_strategy_id"] is not None:
+                flash(f"Replaced {batch['items'][0]['name']} from CSV.", "success")
+            elif len(batch["items"]) == 1:
+                flash(f"Imported {batch['items'][0]['name']}.", "success")
+            else:
+                flash(f"Imported {len(batch['items'])} strategies.", "success")
+            return redirect(url_for("strategies"))
+        except StrategyImportError as error:
+            flash(str(error), "error")
+        except sqlite3.IntegrityError:
+            flash("A strategy in this draft conflicts with an existing strategy.", "error")
+
+    return render_template(
+        "ira_strategies/review_import.html",
+        batch=batch,
+        submitted_scores=request.form.getlist("risk_score"),
+    )
+
+
+@app.post("/ira/strategies/imports/<int:batch_id>/delete")
+def delete_strategy_import(batch_id):
+    if not database.delete_ira_strategy_import_batch(batch_id):
+        abort(404)
+    flash("Strategy import draft deleted.", "success")
+    return redirect(url_for("import_strategy"))
+
+
+@app.get("/ira/analyzer/<slug>")
+def strategy(slug):
+    selected = database.get_ira_strategy_by_slug(slug)
+    if selected is None:
+        abort(404)
     return render_template(
         "ira_strategies/index.html",
-        portfolios=portfolios,
         portfolio=selected,
-        errors=errors,
+        strategies=database.list_ira_strategies(),
     )
+
+
+@app.route("/ira/strategies/<int:strategy_id>/edit", methods=("GET", "POST"))
+def edit_strategy(strategy_id):
+    selected = database.get_ira_strategy(strategy_id)
+    if selected is None:
+        abort(404)
+    if request.method == "POST":
+        submitted = _submitted_strategy_editor(selected)
+        try:
+            risk_score = _strategy_risk_score()
+            parsed = _parse_strategy_editor()
+            database.replace_ira_strategy(
+                strategy_id, parsed, risk_score=risk_score
+            )
+            flash(f"Saved {parsed.name}.", "success")
+            return redirect(url_for("strategy", slug=selected["slug"]))
+        except StrategyImportError as error:
+            flash(str(error), "error")
+        except sqlite3.IntegrityError:
+            flash("That strategy name is already in use.", "error")
+        selected = submitted
+    return render_template("ira_strategies/edit.html", portfolio=selected)
+
+
+@app.post("/ira/strategies/<int:strategy_id>/delete")
+def delete_strategy(strategy_id):
+    selected = database.get_ira_strategy(strategy_id)
+    if selected is None:
+        abort(404)
+    database.delete_ira_strategy(strategy_id)
+    flash(f"Deleted {selected['name']}.", "success")
+    return redirect(url_for("strategies"))
 
 
 @app.get("/spending/analyzer")
@@ -692,5 +855,8 @@ def remove_category(category_id):
 
 @app.errorhandler(RequestEntityTooLarge)
 def upload_too_large(_error):
+    if request.endpoint == "import_strategy":
+        flash("The strategy CSV is larger than the request limit.", "error")
+        return redirect(url_for("import_strategy"))
     flash("The combined upload is larger than the 128 MB request limit.", "error")
     return redirect(url_for("import_statement_pdf"))

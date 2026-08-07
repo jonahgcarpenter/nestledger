@@ -1,11 +1,13 @@
 import tempfile
 import unittest
 import stat
+import sqlite3
 from pathlib import Path
 
 from flask import Flask
 
 from nestledger import database
+from nestledger.strategy_import import parse_strategy_csv
 
 
 class DatabaseTests(unittest.TestCase):
@@ -115,6 +117,79 @@ class DatabaseTests(unittest.TestCase):
         path = Path(self.app.config["DATABASE"])
         self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(path.parent.stat().st_mode), 0o700)
+
+    def test_strategy_lifecycle_preserves_order_and_cascades(self):
+        parsed = parse_strategy_csv(
+            (
+                "Strategy,Category,Asset,Ticker,Allocation\n"
+                "Retirement plan,Stocks,Index fund,INDEX,70.00%\n"
+                "Retirement plan,Bonds,Treasury fund,BOND,30.00%\n"
+            ).encode(),
+            "retirement.csv",
+        )
+        strategy_id = database.create_ira_strategy(
+            parsed, "retirement-plan", "retirement.csv"
+        )
+        strategy = database.get_ira_strategy(strategy_id)
+        self.assertEqual(strategy["name"], "Retirement plan")
+        self.assertEqual(strategy["risk_score"], 5)
+        self.assertEqual(
+            [category["name"] for category in strategy["categories"]],
+            ["Stocks", "Bonds"],
+        )
+        self.assertEqual(
+            [holding["allocation_bps"] for holding in strategy["holdings"]],
+            [7000, 3000],
+        )
+        conflicting = parse_strategy_csv(
+            (
+                "Strategy,Category,Asset,Ticker,Allocation\n"
+                "Another plan,Cash,Money market,,100.00%\n"
+            ).encode(),
+            "another.csv",
+        )
+        database.create_ira_strategy(conflicting, "another-plan", "another.csv")
+        self.assertEqual(
+            [row["name"] for row in database.list_ira_strategies()],
+            ["Another plan", "Retirement plan"],
+        )
+        with self.assertRaises(sqlite3.IntegrityError):
+            database.replace_ira_strategy(strategy_id, conflicting)
+        self.assertEqual(database.get_ira_strategy(strategy_id)["name"], "Retirement plan")
+        self.assertEqual(len(database.get_ira_strategy(strategy_id)["holdings"]), 2)
+        self.assertTrue(database.delete_ira_strategy(strategy_id))
+        self.assertEqual(
+            database.get_db()
+            .execute(
+                "SELECT COUNT(*) FROM ira_strategy_categories WHERE strategy_id = ?",
+                (strategy_id,),
+            )
+            .fetchone()[0],
+            0,
+        )
+
+    def test_existing_strategies_receive_default_risk_score(self):
+        db = database.get_db()
+        db.executescript(
+            """DROP TABLE ira_strategy_holdings;
+               DROP TABLE ira_strategy_categories;
+               DROP TABLE ira_strategies;
+               CREATE TABLE ira_strategies (
+                   id INTEGER PRIMARY KEY,
+                   name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                   slug TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                   source_filename TEXT,
+                   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+               );
+               INSERT INTO ira_strategies(name, slug)
+               VALUES ('Existing plan', 'existing-plan');"""
+        )
+        database.init_db()
+        strategy = db.execute(
+            "SELECT * FROM ira_strategies WHERE slug = 'existing-plan'"
+        ).fetchone()
+        self.assertEqual(strategy["risk_score"], 5)
 
 
 if __name__ == "__main__":

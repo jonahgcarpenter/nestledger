@@ -1,9 +1,9 @@
 # NestLedger
 
 NestLedger is a local Flask application for IRA allocation planning and
-credit-card spending analysis. It imports statement PDFs, extracts transactions
-locally, applies reusable merchant filters, and stores the reviewed ledger in
-SQLite.
+credit-card spending analysis. It imports private strategy CSVs and statement
+PDFs, applies reusable merchant filters, and stores strategies and the reviewed
+ledger in SQLite.
 
 Supported statement issuers:
 
@@ -59,7 +59,7 @@ Run it with a persistent named volume for the SQLite database and uploaded state
 ```bash
 docker run --rm \
   --name nestledger \
-  -p 8000:8000 \
+  -p 127.0.0.1:8000:8000 \
   -e SECRET_KEY="$(openssl rand -hex 32)" \
   -v nestledger-data:/app/data \
   nestledger
@@ -79,9 +79,10 @@ Tests use synthetic statement text and do not contain personal or card data.
 
 Importing a credit-card statement creates a draft of its transactions for review and categorization. Merchant filters can automatically assign categories, exclude payments, and remember decisions for future statements. Once confirmed, transactions become available in the spending analyzer, where they can be filtered by card, merchant, category, and date to understand spending patterns.
 
-## Add An IRA Portfolio
+## IRA Strategies
 
-Place a `.csv` file in `data/strategies/` with this format:
+Open **IRA > Strategies**, select **Import CSV**, and upload a UTF-8 CSV with
+this format:
 
 ```csv
 Strategy,Category,Asset,Ticker,Allocation
@@ -91,4 +92,11 @@ High risk,Total,,,100.00%
 ```
 
 Allocations excluding the optional `Total` row must add up to 100%. The
-strategy appears in the strategy switcher automatically.
+strategy appears in the strategy switcher automatically. CSV files are
+validated in memory and are not retained after import. Strategies can be
+edited, replaced from another CSV, or deleted through the UI. Each strategy has
+a risk score from 1 (lowest) to 10 (highest); analyzer choices are ordered by
+risk score and then alphabetically.
+
+Use **IRA > Analyzer** to switch between imported strategies, review target
+allocations, and run the deposit and rebalancing calculators.

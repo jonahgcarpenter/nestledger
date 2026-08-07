@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ portfolio.name }}{% endblock %}
+{% block main_class %}strategy-shell{% endblock %}
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='ira_strategies.css') }}">
+{% endblock %}
+{% block content %}
+  <header>
+    <p class="eyebrow">Strategy editor</p>
+    <h1>Edit {{ portfolio.name }}.</h1>
+    <p class="intro">Changes are validated and saved atomically. Allocations must total exactly 100.00%.</p>
+  </header>
+
+  <form method="post" id="strategyEditor">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <section class="panel strategy-name-field">
+      <div>
+        <label for="strategyName">Strategy name</label>
+        <input id="strategyName" name="name" maxlength="120" value="{{ portfolio.name }}" required>
+      </div>
+      <div>
+        <label for="strategyRiskScore">Risk score</label>
+        <input id="strategyRiskScore" name="risk_score" type="number" min="1" max="10" step="1" value="{{ portfolio.risk_score }}" required>
+      </div>
+    </section>
+    <section class="panel editor-panel">
+      <div class="holding-editor-head">
+        <div>
+          <p class="eyebrow">Target allocation</p>
+          <h2>Holdings</h2>
+        </div>
+        <button class="button" id="addHolding" type="button">Add holding</button>
+      </div>
+      <div id="holdingRows" class="holding-editor-rows">
+        {% for holding in portfolio.holdings %}
+          <div class="holding-editor-row">
+            <div><label>Category</label><input name="category" maxlength="120" value="{{ holding.category }}" required></div>
+            <div><label>Asset</label><input name="asset" maxlength="120" value="{{ holding.asset }}" required></div>
+            <div><label>Ticker</label><input name="ticker" maxlength="32" value="{{ holding.ticker }}"></div>
+            <div><label>Allocation %</label><input name="allocation" type="number" min="0" max="100" step="0.01" value="{{ holding.allocation_input|default('%.2f'|format(holding.allocation)) }}" required></div>
+            <button class="button danger remove-holding" type="button" aria-label="Remove holding">Remove</button>
+          </div>
+        {% endfor %}
+      </div>
+      <div class="editor-footer">
+        <span class="hint">Total allocation: <strong id="allocationTotal">0.00%</strong></span>
+        <div class="actions">
+          <a class="button" href="{{ url_for('strategy', slug=portfolio.slug) }}">Cancel</a>
+          <button class="button primary" type="submit">Save strategy</button>
+        </div>
+      </div>
+    </section>
+  </form>
+
+  <template id="holdingTemplate">
+    <div class="holding-editor-row">
+      <div><label>Category</label><input name="category" maxlength="120" required></div>
+      <div><label>Asset</label><input name="asset" maxlength="120" required></div>
+      <div><label>Ticker</label><input name="ticker" maxlength="32"></div>
+      <div><label>Allocation %</label><input name="allocation" type="number" min="0" max="100" step="0.01" value="0.00" required></div>
+      <button class="button danger remove-holding" type="button" aria-label="Remove holding">Remove</button>
+    </div>
+  </template>
+{% endblock %}
+{% block scripts %}
+  <script>
+    const rows = document.getElementById("holdingRows");
+    const total = document.getElementById("allocationTotal");
+
+    function updateTotal() {
+      const value = [...rows.querySelectorAll('[name="allocation"]')]
+        .reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+      total.textContent = `${value.toFixed(2)}%`;
+      total.classList.toggle("error-tag", Math.abs(value - 100) > 0.001);
+    }
+
+    rows.addEventListener("click", (event) => {
+      if (!event.target.classList.contains("remove-holding")) return;
+      if (rows.children.length > 1) event.target.closest(".holding-editor-row").remove();
+      updateTotal();
+    });
+    rows.addEventListener("input", updateTotal);
+    document.getElementById("addHolding").addEventListener("click", () => {
+      rows.append(document.getElementById("holdingTemplate").content.cloneNode(true));
+      updateTotal();
+    });
+    updateTotal();
+  </script>
+{% endblock %}

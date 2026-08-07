@@ -5,11 +5,12 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='ira_strategies.css') }}">
 {% endblock %}
 {% block content %}
-    {% if errors %}
-      <div class="errors">
-        <strong>Some CSV files could not be loaded:</strong>
-        {% for error in errors %}<div>{{ error }}</div>{% endfor %}
-      </div>
+    {% if strategies %}
+      <nav class="strategy-switcher" aria-label="Choose IRA strategy">
+        {% for item in strategies %}
+          <a class="button{% if portfolio and item.slug == portfolio.slug %} primary{% endif %}" href="{{ url_for('strategy', slug=item.slug) }}"{% if portfolio and item.slug == portfolio.slug %} aria-current="page"{% endif %}>{{ item.name }}</a>
+        {% endfor %}
+      </nav>
     {% endif %}
 
     {% if portfolio %}
@@ -135,9 +136,12 @@
       </section>
 
     {% else %}
-      <div class="empty">
-        No valid portfolios were found. Add a CSV file to <code>data/strategies/</code> with the columns Strategy, Category, Asset, Ticker, and Allocation.
-      </div>
+      <section class="panel strategy-empty">
+        <p class="eyebrow">IRA analyzer</p>
+        <h1>No strategies yet.</h1>
+        <p class="intro">Import a strategy before using the allocation analyzer and calculators.</p>
+        <a class="button primary" href="{{ url_for('import_strategy') }}">Import your first strategy</a>
+      </section>
     {% endif %}
 {% endblock %}
 {% block scripts %}
