@@ -124,6 +124,7 @@ class AppFlowTests(unittest.TestCase):
             templates / "ira_strategies" / "index.html",
             templates / "ira_strategies" / "manage.html",
             templates / "ira_strategies" / "import.html",
+            templates / "ira_strategies" / "review_import.html",
             templates / "ira_strategies" / "edit.html",
             templates / "spending" / "index.html",
             templates / "spending" / "filters.html",
@@ -148,12 +149,24 @@ class AppFlowTests(unittest.TestCase):
             "/ira/strategies/import",
             data={
                 "csrf_token": self.csrf,
-                "risk_score": "7",
                 "strategy": (io.BytesIO(csv_content), "custom.csv"),
             },
             content_type="multipart/form-data",
         )
         self.assertEqual(imported.status_code, 302)
+        self.assertRegex(imported.headers["Location"], r"/ira/strategies/imports/\d+$")
+        review_url = imported.headers["Location"]
+        review = self.client.get(review_url)
+        self.assertIn(b"Score your strategies", review.data)
+        self.assertIn(b"Custom plan", review.data)
+        drafts_page = self.client.get("/ira/strategies/import")
+        self.assertIn(b"Draft imports", drafts_page.data)
+        self.assertIn(b"Custom plan", drafts_page.data)
+        self.assertIn(review_url.encode(), drafts_page.data)
+        imported = self.client.post(
+            review_url,
+            data={"csrf_token": self.csrf, "risk_score": "7"},
+        )
         self.assertEqual(imported.headers["Location"], "/ira/strategies")
         with application.app.app_context():
             strategy = database.get_ira_strategy_by_name("Custom plan")
@@ -183,12 +196,16 @@ class AppFlowTests(unittest.TestCase):
             data={
                 "csrf_token": self.csrf,
                 "replace": str(strategy_id),
-                "risk_score": "8",
                 "strategy": (io.BytesIO(replacement_content), "replacement.csv"),
             },
             content_type="multipart/form-data",
         )
         self.assertEqual(replaced.status_code, 302)
+        self.assertRegex(replaced.headers["Location"], r"/ira/strategies/imports/\d+$")
+        replaced = self.client.post(
+            replaced.headers["Location"],
+            data={"csrf_token": self.csrf, "risk_score": "8"},
+        )
         self.assertEqual(replaced.headers["Location"], "/ira/strategies")
         with application.app.app_context():
             strategy = database.get_ira_strategy(strategy_id)
@@ -240,6 +257,93 @@ class AppFlowTests(unittest.TestCase):
         self.assertEqual(deleted.headers["Location"], "/ira/strategies")
         with application.app.app_context():
             self.assertIsNone(database.get_ira_strategy(strategy_id))
+
+    def test_multiple_strategy_imports_have_separate_risk_scores(self):
+        conservative = (
+            b"Strategy,Category,Asset,Ticker,Allocation\n"
+            b"Batch conservative,Bonds,Treasury fund,BOND,100.00%\n"
+        )
+        aggressive = (
+            b"Strategy,Category,Asset,Ticker,Allocation\n"
+            b"Batch aggressive,Stocks,Index fund,INDEX,100.00%\n"
+        )
+        imported = self.client.post(
+            "/ira/strategies/import",
+            data={
+                "csrf_token": self.csrf,
+                "strategy": [
+                    (io.BytesIO(conservative), "conservative.csv"),
+                    (io.BytesIO(aggressive), "aggressive.csv"),
+                ],
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(imported.status_code, 302)
+        self.assertRegex(imported.headers["Location"], r"/ira/strategies/imports/\d+$")
+        review_url = imported.headers["Location"]
+        review = self.client.get(review_url)
+        self.assertIn(b"Batch conservative", review.data)
+        self.assertIn(b"Batch aggressive", review.data)
+        self.assertIn(b'value="0" required', review.data)
+        with application.app.app_context():
+            self.assertIsNone(database.get_ira_strategy_by_name("Batch conservative"))
+            self.assertIsNone(database.get_ira_strategy_by_name("Batch aggressive"))
+
+        invalid_score = self.client.post(
+            review_url,
+            data={"csrf_token": self.csrf, "risk_score": ["3", "0"]},
+        )
+        self.assertEqual(invalid_score.status_code, 200)
+        self.assertIn(b"whole numbers from 1 to 10", invalid_score.data)
+
+        imported = self.client.post(
+            review_url,
+            data={"csrf_token": self.csrf, "risk_score": ["3", "9"]},
+        )
+        self.assertEqual(imported.headers["Location"], "/ira/strategies")
+        with application.app.app_context():
+            conservative_strategy = database.get_ira_strategy_by_name(
+                "Batch conservative"
+            )
+            aggressive_strategy = database.get_ira_strategy_by_name(
+                "Batch aggressive"
+            )
+            self.assertEqual(conservative_strategy["risk_score"], 3)
+            self.assertEqual(aggressive_strategy["risk_score"], 9)
+            self.assertEqual(
+                conservative_strategy["source_filename"], "conservative.csv"
+            )
+            self.assertEqual(
+                aggressive_strategy["source_filename"], "aggressive.csv"
+            )
+
+    def test_invalid_strategy_batch_is_not_partially_imported(self):
+        valid = (
+            b"Strategy,Category,Asset,Ticker,Allocation\n"
+            b"Unsaved valid,Bonds,Treasury fund,BOND,100.00%\n"
+        )
+        invalid = (
+            b"Strategy,Category,Asset,Ticker,Allocation\n"
+            b"Unsaved invalid,Stocks,Index fund,INDEX,90.00%\n"
+        )
+        response = self.client.post(
+            "/ira/strategies/import",
+            data={
+                "csrf_token": self.csrf,
+                "strategy": [
+                    (io.BytesIO(valid), "valid.csv"),
+                    (io.BytesIO(invalid), "invalid.csv"),
+                ],
+            },
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"not 100.00%", response.data)
+        with application.app.app_context():
+            self.assertIsNone(database.get_ira_strategy_by_name("Unsaved valid"))
+            self.assertIsNone(database.get_ira_strategy_by_name("Unsaved invalid"))
 
     @patch("nestledger.app.parse_statement")
     @patch("nestledger.app.extract_pdf_text")

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Review Strategy Import{% endblock %}
+{% block main_class %}strategy-shell{% endblock %}
+{% block styles %}
+  <link rel="stylesheet" href="{{ url_for('static', filename='ira_strategies.css') }}">
+{% endblock %}
+{% block content %}
+  <header>
+    <p class="eyebrow">Review before importing</p>
+    <h1>{% if batch.replacement_strategy_id %}Confirm replacement.{% else %}Score your strategies.{% endif %}</h1>
+    <p class="intro">The CSVs passed validation. Assign each strategy a risk score from 1 to 10 before saving it to NestLedger.</p>
+  </header>
+
+  <form class="strategy-draft-form" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <section class="panel strategy-draft-list" aria-label="Strategies awaiting confirmation">
+      {% for item in batch["items"] %}
+        <article class="strategy-draft-row">
+          <div class="strategy-draft-copy">
+            <p class="eyebrow">{{ item.source_filename }}</p>
+            <h2>{{ item.name }}</h2>
+            <p class="hint">{{ item.holding_count }} holding{{ '' if item.holding_count == 1 else 's' }} across {{ item.parsed.categories|length }} categor{{ 'y' if item.parsed.categories|length == 1 else 'ies' }}</p>
+          </div>
+          <div class="strategy-draft-risk">
+            <label for="riskScore{{ item.id }}">Risk score (1-10)</label>
+            <input id="riskScore{{ item.id }}" name="risk_score" type="number" min="1" max="10" step="1" value="{{ submitted_scores[loop.index0] if submitted_scores|length > loop.index0 else 0 }}" required>
+          </div>
+        </article>
+      {% endfor %}
+    </section>
+    <div class="review-actions actions-offset">
+      <a class="button" href="{{ url_for('import_strategy') }}">Back to upload</a>
+      <div class="actions">
+        <button class="button danger" type="submit" form="delete-strategy-draft">Delete draft</button>
+        <button class="button primary" type="submit">{% if batch.replacement_strategy_id %}Confirm replacement{% else %}Confirm import{% endif %}</button>
+      </div>
+    </div>
+  </form>
+  <form id="delete-strategy-draft" action="{{ url_for('delete_strategy_import', batch_id=batch.id) }}" method="post" onsubmit="return confirm('Delete this strategy import draft?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  </form>
+{% endblock %}

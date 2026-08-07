@@ -2,10 +2,10 @@
   <a class="brand" href="{{ url_for('index') }}">NestLedger</a>
   <div class="nav-links">
     <div class="nav-menu">
-      <a href="{{ url_for('ira_analyzer') }}"{% if request.endpoint in ('index', 'ira_analyzer', 'strategies', 'strategy', 'import_strategy', 'edit_strategy', 'delete_strategy') %} class="active" aria-current="page"{% endif %}>IRA <span class="nav-caret" aria-hidden="true">&#9662;</span></a>
+      <a href="{{ url_for('ira_analyzer') }}"{% if request.endpoint in ('index', 'ira_analyzer', 'strategies', 'strategy', 'import_strategy', 'review_strategy_import', 'delete_strategy_import', 'edit_strategy', 'delete_strategy') %} class="active" aria-current="page"{% endif %}>IRA <span class="nav-caret" aria-hidden="true">&#9662;</span></a>
       <div class="nav-dropdown" aria-label="Investment strategies">
         <a href="{{ url_for('ira_analyzer') }}"{% if request.endpoint in ('ira_analyzer', 'strategy') %} class="active" aria-current="page"{% endif %}>Analyzer</a>
-        <a href="{{ url_for('strategies') }}"{% if request.endpoint in ('strategies', 'import_strategy', 'edit_strategy', 'delete_strategy') %} class="active" aria-current="page"{% endif %}>Strategies</a>
+        <a href="{{ url_for('strategies') }}"{% if request.endpoint in ('strategies', 'import_strategy', 'review_strategy_import', 'delete_strategy_import', 'edit_strategy', 'delete_strategy') %} class="active" aria-current="page"{% endif %}>Strategies</a>
       </div>
     </div>
     <div class="nav-menu">

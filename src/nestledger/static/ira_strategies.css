@@ -480,8 +480,21 @@
       margin: 2rem 0 1rem;
       padding: 1.5rem;
     }
-    .strategy-risk-field { max-width: 220px; margin-bottom: 1.5rem; }
-    .strategy-risk-field .hint { margin: 0.5rem 0 0; }
+    .strategy-draft-form { margin-top: 2.5rem; }
+    .strategy-draft-list { overflow: hidden; }
+    .strategy-draft-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 180px;
+      align-items: center;
+      gap: 2rem;
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .strategy-draft-row:last-child { border-bottom: 0; }
+    .strategy-draft-copy { min-width: 0; }
+    .strategy-draft-copy h2 { font-size: clamp(1.5rem, 3vw, 2.2rem); }
+    .strategy-draft-copy .hint { margin: 0.45rem 0 0; }
+    .strategy-draft-risk input { min-height: 52px; }
     .editor-panel { padding: clamp(1rem, 3vw, 1.5rem); }
     .holding-editor-head,
     .editor-footer {
@@ -584,6 +597,7 @@
       .holding-editor-row { grid-template-columns: 1fr; }
       .holding-editor-row .remove-holding { grid-column: auto; justify-self: start; }
       .strategy-name-field { grid-template-columns: 1fr; }
+      .strategy-draft-row { grid-template-columns: minmax(0, 1fr) 150px; }
     }
 
     @media (max-width: 480px) {
@@ -624,6 +638,8 @@
 
       input[type="number"] { font-size: 1.2rem; }
       .calculator-bar { padding: 0.9rem; }
+      .strategy-draft-row { grid-template-columns: 1fr; gap: 1rem; }
+      .strategy-draft-risk { width: min(100%, 180px); }
     }
 
     @media (prefers-reduced-motion: reduce) {

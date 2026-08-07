@@ -233,11 +233,12 @@ def _process_statement_upload(upload):
             temp_path.unlink(missing_ok=True)
 
 
-def _strategy_slug(name):
+def _strategy_slug(name, reserved=()):
     base = secure_filename(name).lower().replace("_", "-").strip("-") or "strategy"
     slug = base[:100]
     suffix = 2
-    while database.ira_strategy_slug_exists(slug):
+    reserved = set(reserved)
+    while database.ira_strategy_slug_exists(slug) or slug in reserved:
         addition = f"-{suffix}"
         slug = base[: 100 - len(addition)] + addition
         suffix += 1
@@ -271,6 +272,21 @@ def _strategy_risk_score():
     if risk_score is None or not 1 <= risk_score <= 10:
         raise StrategyImportError("Risk score must be a whole number from 1 to 10")
     return risk_score
+
+
+def _strategy_risk_scores(count):
+    submitted = request.form.getlist("risk_score")
+    if len(submitted) != count:
+        raise StrategyImportError("Choose a risk score for each strategy CSV")
+    try:
+        risk_scores = [int(value) for value in submitted]
+    except (TypeError, ValueError) as exc:
+        raise StrategyImportError(
+            "Risk scores must be whole numbers from 1 to 10"
+        ) from exc
+    if any(not 1 <= risk_score <= 10 for risk_score in risk_scores):
+        raise StrategyImportError("Risk scores must be whole numbers from 1 to 10")
+    return risk_scores
 
 
 def _submitted_strategy_editor(selected):
@@ -324,46 +340,139 @@ def import_strategy():
     if replace_id and replacement is None:
         abort(404)
     if request.method == "POST":
-        uploaded = request.files.get("strategy")
-        if uploaded is None or not uploaded.filename:
+        uploads = [
+            uploaded
+            for uploaded in request.files.getlist("strategy")
+            if uploaded.filename
+        ]
+        if not uploads:
             flash("Choose a strategy CSV to import.", "error")
+        elif replacement is not None and len(uploads) != 1:
+            flash("Choose one strategy CSV when replacing a strategy.", "error")
         else:
-            filename = secure_filename(uploaded.filename) or "strategy.csv"
-            content = uploaded.stream.read(MAX_FILE_SIZE + 1)
             try:
-                risk_score = _strategy_risk_score()
-                parsed = parse_strategy_csv(content, filename)
+                pending = []
+                for uploaded in uploads:
+                    filename = secure_filename(uploaded.filename) or "strategy.csv"
+                    content = uploaded.stream.read(MAX_FILE_SIZE + 1)
+                    pending.append((parse_strategy_csv(content, filename), filename))
+
                 if replacement is not None:
+                    parsed, _ = pending[0]
                     if parsed.name.casefold() != replacement["name"].casefold():
                         raise StrategyImportError(
                             "The CSV strategy name must match the strategy being replaced"
                         )
-                    database.replace_ira_strategy(
-                        replacement["id"], parsed,
-                        source_filename=filename, update_source=True,
-                        risk_score=risk_score,
+
+                names = [parsed.name.casefold() for parsed, _ in pending]
+                if len(names) != len(set(names)):
+                    raise StrategyImportError(
+                        "Each CSV in a batch must contain a different strategy"
                     )
-                    flash(f"Replaced {replacement['name']} from CSV.", "success")
-                    return redirect(url_for("strategies"))
-                conflict = database.get_ira_strategy_by_name(parsed.name)
-                if conflict is not None:
+                conflicts = [
+                    database.get_ira_strategy_by_name(parsed.name)
+                    for parsed, _ in pending
+                ]
+                if replacement is not None:
+                    conflicts = []
+                conflicts = [conflict for conflict in conflicts if conflict is not None]
+                if len(pending) == 1 and conflicts:
                     flash(
                         "A strategy with that name exists. Review and confirm replacement.",
                         "error",
                     )
-                    return redirect(url_for("import_strategy", replace=conflict["id"]))
-                database.create_ira_strategy(
-                    parsed, _strategy_slug(parsed.name), filename, risk_score
+                    return redirect(url_for("import_strategy", replace=conflicts[0]["id"]))
+                if conflicts:
+                    conflict_names = ", ".join(conflict["name"] for conflict in conflicts)
+                    raise StrategyImportError(
+                        f"These strategies already exist: {conflict_names}. "
+                        "Import or replace them separately."
+                    )
+                batch_id = database.create_ira_strategy_import_batch(
+                    pending,
+                    replacement_strategy_id=replacement["id"] if replacement else None,
                 )
-                flash(f"Imported {parsed.name}.", "success")
-                return redirect(url_for("strategies"))
+                flash("CSV validation passed. Add risk scores before importing.", "success")
+                return redirect(
+                    url_for("review_strategy_import", batch_id=batch_id)
+                )
             except StrategyImportError as error:
                 flash(str(error), "error")
             except sqlite3.IntegrityError:
                 flash("That strategy conflicts with an existing strategy.", "error")
     return render_template(
-        "ira_strategies/import.html", replacement=replacement
+        "ira_strategies/import.html",
+        replacement=replacement,
+        drafts=[] if replacement else database.list_ira_strategy_import_batches(),
     )
+
+
+@app.route("/ira/strategies/imports/<int:batch_id>", methods=("GET", "POST"))
+def review_strategy_import(batch_id):
+    batch = database.get_ira_strategy_import_batch(batch_id)
+    if batch is None:
+        abort(404)
+
+    if request.method == "POST":
+        try:
+            risk_scores = _strategy_risk_scores(len(batch["items"]))
+            if batch["replacement_strategy_id"] is None:
+                conflicts = [
+                    database.get_ira_strategy_by_name(item["name"])
+                    for item in batch["items"]
+                ]
+                conflicts = [item for item in conflicts if item is not None]
+                if conflicts:
+                    names = ", ".join(item["name"] for item in conflicts)
+                    raise StrategyImportError(
+                        f"These strategies now exist: {names}. Cancel this draft and "
+                        "replace them separately."
+                    )
+
+            reserved_slugs = set()
+            strategies_to_confirm = []
+            for item, risk_score in zip(batch["items"], risk_scores):
+                slug = ""
+                if batch["replacement_strategy_id"] is None:
+                    slug = _strategy_slug(item["name"], reserved_slugs)
+                    reserved_slugs.add(slug)
+                strategies_to_confirm.append(
+                    (
+                        item["id"],
+                        item["parsed"],
+                        slug,
+                        item["source_filename"],
+                        risk_score,
+                    )
+                )
+            database.confirm_ira_strategy_import_batch(
+                batch_id, strategies_to_confirm
+            )
+            if batch["replacement_strategy_id"] is not None:
+                flash(f"Replaced {batch['items'][0]['name']} from CSV.", "success")
+            elif len(batch["items"]) == 1:
+                flash(f"Imported {batch['items'][0]['name']}.", "success")
+            else:
+                flash(f"Imported {len(batch['items'])} strategies.", "success")
+            return redirect(url_for("strategies"))
+        except StrategyImportError as error:
+            flash(str(error), "error")
+        except sqlite3.IntegrityError:
+            flash("A strategy in this draft conflicts with an existing strategy.", "error")
+
+    return render_template(
+        "ira_strategies/review_import.html",
+        batch=batch,
+        submitted_scores=request.form.getlist("risk_score"),
+    )
+
+
+@app.post("/ira/strategies/imports/<int:batch_id>/delete")
+def delete_strategy_import(batch_id):
+    if not database.delete_ira_strategy_import_batch(batch_id):
+        abort(404)
+    flash("Strategy import draft deleted.", "success")
+    return redirect(url_for("import_strategy"))
 
 
 @app.get("/ira/analyzer/<slug>")

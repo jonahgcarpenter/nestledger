@@ -17,31 +17,54 @@
     </p>
   </header>
 
-  <form class="panel upload" method="post" enctype="multipart/form-data"{% if replacement %} onsubmit="return confirm('Replace all holdings in this strategy?');"{% endif %}>
+  <form class="panel upload" method="post" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if replacement %}<input type="hidden" name="replace" value="{{ replacement.id }}">{% endif %}
-    <div class="strategy-risk-field">
-      <label for="riskScore">Risk score</label>
-      <input id="riskScore" name="risk_score" type="number" min="1" max="10" step="1" value="{{ request.form.get('risk_score', replacement.risk_score if replacement else 5) }}" required>
-      <p class="hint">1 is the lowest risk and 10 is the highest.</p>
-    </div>
     <label class="drop-zone" for="strategyCsv">
-      <strong>{% if replacement %}Choose replacement CSV{% else %}Choose strategy CSV{% endif %}</strong>
-      <span>UTF-8 CSV, up to 256 KiB and 500 holdings</span>
+      <strong>{% if replacement %}Choose replacement CSV{% else %}Choose strategy CSVs{% endif %}</strong>
+      <span>UTF-8 CSV, up to 256 KiB and 500 holdings each</span>
       <span class="selected-files" id="strategyCsvName">No file selected</span>
     </label>
-    <input class="file-input" id="strategyCsv" name="strategy" type="file" accept=".csv,text/csv" required>
+    <input class="file-input" id="strategyCsv" name="strategy" type="file" accept=".csv,text/csv"{% if not replacement %} multiple{% endif %} required>
     <div class="upload-footer">
       <p class="hint">Required columns: Strategy, Category, Asset, Ticker, Allocation. Allocations must total exactly 100.00%.</p>
-      <button class="button primary" type="submit">{% if replacement %}Replace strategy{% else %}Import strategy{% endif %}</button>
+      <button class="button primary" type="submit">{% if replacement %}Review replacement{% else %}Review strategies{% endif %}</button>
     </div>
   </form>
+
+  {% if not replacement %}
+    <section class="section">
+      <div class="section-head">
+        <div><p class="eyebrow">Awaiting confirmation</p><h2>Draft imports.</h2></div>
+      </div>
+      <div class="panel table-wrap">
+        <table>
+          <thead><tr><th>Strategies</th><th>Created</th><th></th></tr></thead>
+          <tbody>
+            {% for draft in drafts %}
+              <tr>
+                <td><strong>{{ draft.strategy_names }}</strong><br><span class="muted">{{ draft.strategy_count }} strateg{{ 'y' if draft.strategy_count == 1 else 'ies' }}</span></td>
+                <td class="muted">{{ draft.created_at }}</td>
+                <td class="money"><a class="button" href="{{ url_for('review_strategy_import', batch_id=draft.id) }}">Review</a></td>
+              </tr>
+            {% else %}
+              <tr><td class="empty" colspan="3">No strategy drafts awaiting confirmation.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endif %}
 {% endblock %}
 {% block scripts %}
   <script>
     const input = document.getElementById("strategyCsv");
+    const selectedFiles = document.getElementById("strategyCsvName");
     input.addEventListener("change", () => {
-      document.getElementById("strategyCsvName").textContent = input.files[0]?.name || "No file selected";
+      const files = Array.from(input.files);
+      selectedFiles.textContent = files.length
+        ? files.map(file => file.name).join(", ")
+        : "No file selected";
     });
   </script>
 {% endblock %}

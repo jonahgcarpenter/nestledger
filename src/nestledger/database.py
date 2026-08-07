@@ -8,6 +8,8 @@ from pathlib import Path
 import click
 from flask import current_app, g
 
+from .strategy_import import ParsedCategory, ParsedHolding, ParsedStrategy
+
 
 CATEGORY_NAMES = (
     "Groceries",
@@ -130,6 +132,24 @@ CREATE TABLE IF NOT EXISTS ira_strategy_holdings (
     UNIQUE(category_id, position)
 );
 
+CREATE TABLE IF NOT EXISTS ira_strategy_import_batches (
+    id INTEGER PRIMARY KEY,
+    replacement_strategy_id INTEGER REFERENCES ira_strategies(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ira_strategy_import_drafts (
+    id INTEGER PRIMARY KEY,
+    batch_id INTEGER NOT NULL
+        REFERENCES ira_strategy_import_batches(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL CHECK(position >= 0),
+    name TEXT NOT NULL COLLATE NOCASE,
+    source_filename TEXT NOT NULL,
+    payload TEXT NOT NULL CHECK(json_valid(payload)),
+    UNIQUE(batch_id, position),
+    UNIQUE(batch_id, name)
+);
+
 CREATE INDEX IF NOT EXISTS idx_imports_status ON imports(status);
 CREATE INDEX IF NOT EXISTS idx_transactions_import_order
     ON transactions(import_id, source_row);
@@ -142,6 +162,8 @@ CREATE INDEX IF NOT EXISTS idx_ira_categories_strategy
     ON ira_strategy_categories(strategy_id, position);
 CREATE INDEX IF NOT EXISTS idx_ira_holdings_category
     ON ira_strategy_holdings(category_id, position);
+CREATE INDEX IF NOT EXISTS idx_ira_strategy_drafts_batch
+    ON ira_strategy_import_drafts(batch_id, position);
 """
 
 
@@ -421,19 +443,164 @@ def _validate_ira_strategy(parsed_strategy):
         raise ValueError("strategy allocations must total 100.00 percent")
 
 
+def _create_ira_strategy(db, parsed_strategy, slug, source_filename, risk_score):
+    strategy_id = db.execute(
+        """INSERT INTO ira_strategies(name, slug, risk_score, source_filename)
+           VALUES (?, ?, ?, ?)""",
+        (parsed_strategy.name, slug, risk_score, source_filename),
+    ).lastrowid
+    _insert_ira_strategy_rows(db, strategy_id, parsed_strategy)
+    return strategy_id
+
+
 def create_ira_strategy(parsed_strategy, slug, source_filename=None, risk_score=5):
     _validate_ira_strategy(parsed_strategy)
     if not 1 <= risk_score <= 10:
         raise ValueError("risk score must be between 1 and 10")
     db = get_db()
     with db:
-        strategy_id = db.execute(
-            """INSERT INTO ira_strategies(name, slug, risk_score, source_filename)
-               VALUES (?, ?, ?, ?)""",
-            (parsed_strategy.name, slug, risk_score, source_filename),
+        return _create_ira_strategy(
+            db, parsed_strategy, slug, source_filename, risk_score
+        )
+
+
+def create_ira_strategy_import_batch(strategies, replacement_strategy_id=None):
+    if not strategies:
+        raise ValueError("strategy import batch cannot be empty")
+    for parsed_strategy, _ in strategies:
+        _validate_ira_strategy(parsed_strategy)
+    db = get_db()
+    with db:
+        batch_id = db.execute(
+            """INSERT INTO ira_strategy_import_batches(replacement_strategy_id)
+               VALUES (?)""",
+            (replacement_strategy_id,),
         ).lastrowid
-        _insert_ira_strategy_rows(db, strategy_id, parsed_strategy)
-    return strategy_id
+        for position, (parsed_strategy, source_filename) in enumerate(strategies):
+            payload = json.dumps(
+                {
+                    "categories": [
+                        {
+                            "name": category.name,
+                            "holdings": [
+                                {
+                                    "asset": holding.asset,
+                                    "ticker": holding.ticker,
+                                    "allocation_bps": holding.allocation_bps,
+                                }
+                                for holding in category.holdings
+                            ],
+                        }
+                        for category in parsed_strategy.categories
+                    ]
+                },
+                separators=(",", ":"),
+            )
+            db.execute(
+                """INSERT INTO ira_strategy_import_drafts(
+                       batch_id, position, name, source_filename, payload
+                   ) VALUES (?, ?, ?, ?, ?)""",
+                (batch_id, position, parsed_strategy.name, source_filename, payload),
+            )
+    return batch_id
+
+
+def get_ira_strategy_import_batch(batch_id):
+    batch = get_db().execute(
+        "SELECT * FROM ira_strategy_import_batches WHERE id = ?", (batch_id,)
+    ).fetchone()
+    if batch is None:
+        return None
+    output = dict(batch)
+    output["items"] = []
+    rows = get_db().execute(
+        """SELECT * FROM ira_strategy_import_drafts
+           WHERE batch_id = ? ORDER BY position""",
+        (batch_id,),
+    ).fetchall()
+    for row in rows:
+        item = dict(row)
+        payload = json.loads(item.pop("payload"))
+        item["parsed"] = ParsedStrategy(
+            item["name"],
+            tuple(
+                ParsedCategory(
+                    category["name"],
+                    tuple(
+                        ParsedHolding(
+                            holding["asset"],
+                            holding["ticker"],
+                            holding["allocation_bps"],
+                        )
+                        for holding in category["holdings"]
+                    ),
+                )
+                for category in payload["categories"]
+            ),
+        )
+        item["holding_count"] = sum(
+            len(category.holdings) for category in item["parsed"].categories
+        )
+        output["items"].append(item)
+    return output
+
+
+def list_ira_strategy_import_batches():
+    return get_db().execute(
+        """SELECT b.id, b.replacement_strategy_id, b.created_at,
+                  COUNT(d.id) AS strategy_count,
+                  GROUP_CONCAT(d.name, ', ') AS strategy_names
+           FROM ira_strategy_import_batches b
+           JOIN ira_strategy_import_drafts d ON d.batch_id = b.id
+           GROUP BY b.id
+           ORDER BY b.id DESC"""
+    ).fetchall()
+
+
+def confirm_ira_strategy_import_batch(batch_id, strategies):
+    batch = get_ira_strategy_import_batch(batch_id)
+    if batch is None or len(batch["items"]) != len(strategies):
+        raise ValueError("strategy import draft does not exist")
+    if [item["id"] for item in batch["items"]] != [item_id for item_id, *_ in strategies]:
+        raise ValueError("strategy import draft does not match submitted strategies")
+    for _, parsed_strategy, _, _, risk_score in strategies:
+        _validate_ira_strategy(parsed_strategy)
+        if not 1 <= risk_score <= 10:
+            raise ValueError("risk score must be between 1 and 10")
+
+    db = get_db()
+    with db:
+        replacement_id = batch["replacement_strategy_id"]
+        if replacement_id is not None:
+            if len(strategies) != 1:
+                raise ValueError("replacement drafts must contain one strategy")
+            _, parsed_strategy, _, source_filename, risk_score = strategies[0]
+            updated = db.execute(
+                """UPDATE ira_strategies SET name = ?, source_filename = ?,
+                          risk_score = ?, updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ?""",
+                (parsed_strategy.name, source_filename, risk_score, replacement_id),
+            ).rowcount
+            if not updated:
+                raise ValueError("strategy being replaced no longer exists")
+            db.execute(
+                "DELETE FROM ira_strategy_categories WHERE strategy_id = ?",
+                (replacement_id,),
+            )
+            _insert_ira_strategy_rows(db, replacement_id, parsed_strategy)
+        else:
+            for _, parsed_strategy, slug, source_filename, risk_score in strategies:
+                _create_ira_strategy(
+                    db, parsed_strategy, slug, source_filename, risk_score
+                )
+        db.execute("DELETE FROM ira_strategy_import_batches WHERE id = ?", (batch_id,))
+
+
+def delete_ira_strategy_import_batch(batch_id):
+    with get_db() as db:
+        return db.execute(
+            "DELETE FROM ira_strategy_import_batches WHERE id = ?", (batch_id,)
+        ).rowcount == 1
 
 
 def replace_ira_strategy(
