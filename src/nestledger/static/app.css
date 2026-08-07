@@ -13,12 +13,14 @@
 
 * { box-sizing: border-box; }
 body {
+  min-height: 100vh;
   margin: 0;
   color: var(--ink);
   background:
     radial-gradient(circle at 8% 0, rgb(238 121 84 / 13%), transparent 30rem),
     radial-gradient(circle at 90% 25%, rgb(120 173 137 / 8%), transparent 28rem),
     var(--bg);
+  background-repeat: no-repeat;
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
 }
 a { color: inherit; }
