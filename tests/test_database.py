@@ -51,6 +51,7 @@ class DatabaseTests(unittest.TestCase):
             ],
             card_name="Chase Sapphire",
             issuer="Chase",
+            statement_posting_date="2024-01-31",
         )
         self.assertEqual(database.get_import(import_id)["status"], "draft")
         self.assertTrue(database.confirm_import(import_id))
@@ -59,8 +60,68 @@ class DatabaseTests(unittest.TestCase):
             len(database.list_transactions(card_name="Chase Sapphire")), 2
         )
         self.assertEqual(database.list_transactions(card_name="Another Card"), [])
+        self.assertEqual(
+            len(database.list_transactions(
+                statement_posting_from="2024-01-01",
+                statement_posting_to="2024-02-01",
+            )),
+            2,
+        )
+        self.assertEqual(
+            database.list_transactions(
+                statement_posting_from="2024-02-01",
+                statement_posting_to="2024-03-01",
+            ),
+            [],
+        )
         summary = database.transaction_summary()
         self.assertEqual([(row["category"], row["amount_cents"]) for row in summary], [("Shopping", 2500)])
+        self.assertEqual(
+            database.transaction_summary(
+                statement_posting_from="2024-02-01",
+                statement_posting_to="2024-03-01",
+            ),
+            [],
+        )
+
+    def test_import_migration_backfills_statement_posting_date(self):
+        database.close_db()
+        path = Path(self.app.config["DATABASE"])
+        path.unlink()
+        connection = sqlite3.connect(path)
+        connection.executescript(
+            """
+            CREATE TABLE imports (
+                id INTEGER PRIMARY KEY,
+                content_sha256 TEXT NOT NULL UNIQUE,
+                filename TEXT NOT NULL,
+                card_name TEXT,
+                issuer TEXT,
+                statement_start TEXT,
+                statement_end TEXT,
+                extraction_method TEXT,
+                status TEXT NOT NULL DEFAULT 'draft',
+                warnings TEXT NOT NULL DEFAULT '[]',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                confirmed_at TEXT
+            );
+            INSERT INTO imports(content_sha256, filename, statement_end)
+            VALUES ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                    'legacy.pdf', '2024-06-30');
+            """
+        )
+        connection.close()
+
+        database.init_db()
+
+        imported = database.get_import(1)
+        self.assertEqual(imported["statement_posting_date"], "2024-06-30")
+        index_names = {
+            row["name"]
+            for row in database.get_db().execute("PRAGMA index_list(imports)")
+        }
+        self.assertIn("idx_imports_statement_posting_date", index_names)
 
     def test_fresh_defaults_are_short_and_payments_are_exclusion_only(self):
         self.assertEqual(

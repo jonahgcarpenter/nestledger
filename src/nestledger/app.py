@@ -212,6 +212,9 @@ def _process_statement_upload(upload):
             issuer=parsed.issuer,
             statement_start=parsed.period_start.isoformat() if parsed.period_start else None,
             statement_end=parsed.period_end.isoformat() if parsed.period_end else None,
+            statement_posting_date=(
+                parsed.closing_date.isoformat() if parsed.closing_date else None
+            ),
             extraction_method=extraction.method,
             warnings=parsed.warnings,
         )
@@ -522,6 +525,20 @@ def delete_strategy(strategy_id):
 
 @app.get("/spending/analyzer")
 def spending():
+    today = date.today()
+    current_month = today.replace(day=1)
+    requested_month = request.args.get("month", "").strip()
+    try:
+        month_start = date.fromisoformat(f"{requested_month}-01")
+    except ValueError:
+        month_start = current_month
+    next_month_start = (
+        date(month_start.year + 1, 1, 1)
+        if month_start.month == 12
+        else date(month_start.year, month_start.month + 1, 1)
+    )
+    statement_posting_from = month_start.isoformat()
+    statement_posting_to = next_month_start.isoformat()
     category_id = request.args.get("category", type=int)
     query = request.args.get("q", "").strip()
     card_name = request.args.get("card", "").strip()
@@ -535,8 +552,13 @@ def spending():
         card_name=card_name or None,
         date_from=date_from or None,
         date_to=date_to or None,
+        statement_posting_from=statement_posting_from,
+        statement_posting_to=statement_posting_to,
     )
-    summaries = database.transaction_summary()
+    summaries = database.transaction_summary(
+        statement_posting_from=statement_posting_from,
+        statement_posting_to=statement_posting_to,
+    )
     category_chart = [
         {
             "name": row["category"],
@@ -551,7 +573,9 @@ def spending():
         category_chart=category_chart,
         categories=database.list_categories(),
         card_names=database.list_card_names(),
+        month_label=month_start.strftime("%B %Y"),
         filters={
+            "month": month_start.strftime("%Y-%m"),
             "category": category_id,
             "q": query,
             "card": card_name,
