@@ -100,6 +100,85 @@ class AppFlowTests(unittest.TestCase):
         self.assertIn(b"Drop statement PDFs here", statements_page)
         self.assertIn(b"multiple required", statements_page)
 
+    def test_spending_only_includes_statements_posted_this_month(self):
+        with application.app.app_context():
+            categories = {
+                row["name"]: row["id"] for row in database.list_categories()
+            }
+            transaction = {
+                "source_row": 0,
+                "transaction_date": "2024-01-02",
+                "original_description": "CURRENT STATEMENT MERCHANT",
+                "merchant": "Current Statement Merchant",
+                "normalized_merchant": "current statement merchant",
+                "amount_cents": 2500,
+                "category_id": categories["Groceries"],
+            }
+            database.create_import(
+                "1" * 64,
+                "current.pdf",
+                [transaction],
+                statement_posting_date=date.today().replace(day=1).isoformat(),
+                status="confirmed",
+            )
+            database.create_import(
+                "2" * 64,
+                "old.pdf",
+                [{
+                    **transaction,
+                    "transaction_date": date.today().isoformat(),
+                    "original_description": "OLD STATEMENT MERCHANT",
+                    "merchant": "Old Statement Merchant",
+                    "normalized_merchant": "old statement merchant",
+                    "category_id": categories["Shopping"],
+                }],
+                statement_posting_date="2000-01-31",
+                status="confirmed",
+            )
+            database.create_import(
+                "3" * 64,
+                "unknown.pdf",
+                [{
+                    **transaction,
+                    "original_description": "UNKNOWN STATEMENT MERCHANT",
+                    "merchant": "Unknown Statement Merchant",
+                    "normalized_merchant": "unknown statement merchant",
+                    "category_id": categories["Dining"],
+                }],
+                status="confirmed",
+            )
+
+        page = self.client.get("/spending/analyzer").data
+        self.assertIn(b"Current Statement Merchant", page)
+        self.assertNotIn(b"Old Statement Merchant", page)
+        self.assertNotIn(b"Unknown Statement Merchant", page)
+        self.assertIn(
+            f'type="month" value="{date.today():%Y-%m}"'.encode(),
+            page,
+        )
+        self.assertIn(b'"name": "Groceries"', page)
+        self.assertNotIn(b'"name": "Shopping"', page)
+        self.assertNotIn(b'"name": "Dining"', page)
+
+        narrowed = self.client.get(
+            "/spending/analyzer?from=2025-01-01"
+        ).data
+        self.assertNotIn(b"Current Statement Merchant", narrowed)
+
+        old_month = self.client.get("/spending/analyzer?month=2000-01").data
+        self.assertIn(b"Old Statement Merchant", old_month)
+        self.assertNotIn(b"Current Statement Merchant", old_month)
+        self.assertIn(b'"name": "Shopping"', old_month)
+        self.assertNotIn(b'"name": "Groceries"', old_month)
+        self.assertIn(b'type="month" value="2000-01"', old_month)
+
+        invalid_month = self.client.get("/spending/analyzer?month=invalid").data
+        self.assertIn(b"Current Statement Merchant", invalid_month)
+        self.assertIn(
+            f'type="month" value="{date.today():%Y-%m}"'.encode(),
+            invalid_month,
+        )
+
     def test_default_storage_paths(self):
         expected_data_path = application.PROJECT_ROOT / "data"
         self.assertEqual(DEFAULT_INSTANCE_PATH, expected_data_path)
@@ -353,6 +432,7 @@ class AppFlowTests(unittest.TestCase):
             issuer="Chase",
             period_start=date(2024, 1, 1),
             period_end=date(2024, 1, 31),
+            closing_date=date.today(),
             transactions=[
                 ParsedTransaction(
                     transaction_date=date(2024, 1, 4),
@@ -476,6 +556,8 @@ class AppFlowTests(unittest.TestCase):
         )
         self.assertEqual(response.headers["Location"], review_path)
         with application.app.app_context():
+            imported = database.get_import(transaction["import_id"])
+            self.assertEqual(imported["statement_posting_date"], date.today().isoformat())
             corrected = database.get_transaction(transaction["id"])
             self.assertEqual(corrected["transaction_date"], "2024-01-06")
             self.assertEqual(corrected["merchant"], "Corrected Merchant")

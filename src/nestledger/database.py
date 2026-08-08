@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS imports (
     issuer TEXT,
     statement_start TEXT,
     statement_end TEXT,
+    statement_posting_date TEXT,
     extraction_method TEXT,
     status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'confirmed')),
     warnings TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(warnings)),
@@ -219,6 +220,16 @@ def _migrate_imports(db):
     columns = db.execute("PRAGMA table_info(imports)").fetchall()
     if not any(row["name"] == "card_name" for row in columns):
         db.execute("ALTER TABLE imports ADD COLUMN card_name TEXT")
+    if not any(row["name"] == "statement_posting_date" for row in columns):
+        db.execute("ALTER TABLE imports ADD COLUMN statement_posting_date TEXT")
+        db.execute(
+            "UPDATE imports SET statement_posting_date = statement_end "
+            "WHERE statement_posting_date IS NULL"
+        )
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_imports_statement_posting_date "
+        "ON imports(statement_posting_date)"
+    )
 
 
 def _migrate_filters(db):
@@ -736,6 +747,7 @@ def create_import(
     issuer=None,
     statement_start=None,
     statement_end=None,
+    statement_posting_date=None,
     extraction_method=None,
     warnings=None,
     status="draft",
@@ -745,10 +757,11 @@ def create_import(
     with db:
         cursor = db.execute(
             """INSERT INTO imports (
-                   content_sha256, filename, card_name, issuer, statement_start, statement_end,
-                   extraction_method, status, warnings, confirmed_at
-               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'confirmed'
-                    THEN CURRENT_TIMESTAMP END)""",
+                   content_sha256, filename, card_name, issuer, statement_start,
+                   statement_end, statement_posting_date, extraction_method, status,
+                   warnings, confirmed_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CASE WHEN ? = 'confirmed'
+                     THEN CURRENT_TIMESTAMP END)""",
             (
                 content_sha256,
                 filename,
@@ -756,6 +769,7 @@ def create_import(
                 issuer,
                 statement_start,
                 statement_end,
+                statement_posting_date,
                 extraction_method,
                 status,
                 _warnings_json(warnings),
@@ -838,7 +852,8 @@ def update_transaction(transaction_id, **changes):
 
 def list_transactions(
     *, import_id=None, status=None, category_id=None, include_excluded=True,
-    query=None, card_name=None, date_from=None, date_to=None
+    query=None, card_name=None, date_from=None, date_to=None,
+    statement_posting_from=None, statement_posting_to=None
 ):
     clauses = []
     params = []
@@ -865,6 +880,12 @@ def list_transactions(
     if date_to:
         clauses.append("t.transaction_date <= ?")
         params.append(date_to)
+    if statement_posting_from:
+        clauses.append("i.statement_posting_date >= ?")
+        params.append(statement_posting_from)
+    if statement_posting_to:
+        clauses.append("i.statement_posting_date < ?")
+        params.append(statement_posting_to)
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     return get_db().execute(
         """SELECT t.*, c.name AS category_name, i.status AS import_status,
@@ -878,7 +899,10 @@ def list_transactions(
     ).fetchall()
 
 
-def transaction_summary(*, import_id=None, status="confirmed", include_excluded=False):
+def transaction_summary(
+    *, import_id=None, status="confirmed", include_excluded=False,
+    statement_posting_from=None, statement_posting_to=None
+):
     clauses = []
     params = []
     if import_id is not None:
@@ -889,6 +913,12 @@ def transaction_summary(*, import_id=None, status="confirmed", include_excluded=
         params.append(status)
     if not include_excluded:
         clauses.append("t.excluded = 0")
+    if statement_posting_from:
+        clauses.append("i.statement_posting_date >= ?")
+        params.append(statement_posting_from)
+    if statement_posting_to:
+        clauses.append("i.statement_posting_date < ?")
+        params.append(statement_posting_to)
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     return get_db().execute(
         """SELECT c.id AS category_id, COALESCE(c.name, 'Uncategorized') AS category,

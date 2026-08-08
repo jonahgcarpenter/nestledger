@@ -3,7 +3,7 @@
 {% block content %}
   <p class="eyebrow">Statement ledger</p>
   <h1>See where the money went.</h1>
-  <p class="lede">Confirmed transactions are grouped by your categories. Filters decide which merchants are categorized or excluded from spending totals.</p>
+  <p class="lede">Confirmed transactions from statements posted in {{ month_label }} are grouped by your categories. Filters decide which merchants are categorized or excluded from spending totals.</p>
   <div class="actions">
     <a class="button primary" href="{{ url_for('import_statement_pdf') }}">Import a statement</a>
     <a class="button" href="{{ url_for('merchant_filters') }}">Manage filters</a>
@@ -27,12 +27,12 @@
   <section id="confirmed-activity" class="section">
     <div class="section-head"><div><p class="eyebrow">Transactions</p><h2>Confirmed activity</h2></div></div>
     <form id="transactionFilters" class="panel form-grid transaction-filters" method="get" action="{{ url_for('spending') }}#confirmed-activity">
+      <div><label for="month">Statement month</label><input id="month" name="month" type="month" value="{{ filters.month }}"></div>
       <div><label for="q">Merchant</label><input id="q" name="q" value="{{ filters.q }}" placeholder="Search merchants"></div>
       <div><label for="card">Card</label><select id="card" name="card"><option value="">All cards</option>{% for card_name in card_names %}<option value="{{ card_name }}"{% if filters.card == card_name %} selected{% endif %}>{{ card_name }}</option>{% endfor %}</select></div>
       <div><label for="category">Category</label><select id="category" name="category"><option value="">All categories</option>{% for category in categories %}<option value="{{ category.id }}"{% if filters.category == category.id %} selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></div>
       <div><label for="from">From</label><input id="from" name="from" type="date" value="{{ filters.from }}"></div>
       <div><label for="to">To</label><input id="to" name="to" type="date" value="{{ filters.to }}"></div>
-      <button class="button primary" type="submit">Apply</button>
     </form>
     <div class="panel table-wrap panel-offset" tabindex="0" role="region" aria-label="Confirmed transactions">
       <table class="data-table">
@@ -58,7 +58,7 @@
     clearTimeout(filterTimer);
     filterTimer = setTimeout(() => transactionFilters.requestSubmit(), 350);
   });
-  transactionFilters.querySelectorAll("select, input[type='date']").forEach(control => {
+  transactionFilters.querySelectorAll("select, input[type='date'], input[type='month']").forEach(control => {
     control.addEventListener("change", () => transactionFilters.requestSubmit());
   });
 </script>
