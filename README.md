@@ -41,7 +41,7 @@ content is sent to an external service.
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
-python -m nestledger
+python -m flask --app nestledger.app:app run --host=0.0.0.0 --port=5000 --reload
 ```
 
 Open `http://127.0.0.1:5000`
