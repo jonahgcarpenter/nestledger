@@ -31,8 +31,24 @@
       <div><label for="q">Merchant</label><input id="q" name="q" value="{{ filters.q }}" placeholder="Search merchants"></div>
       <div><label for="card">Card</label><select id="card" name="card"><option value="">All cards</option>{% for card_name in card_names %}<option value="{{ card_name }}"{% if filters.card == card_name %} selected{% endif %}>{{ card_name }}</option>{% endfor %}</select></div>
       <div><label for="category">Category</label><select id="category" name="category"><option value="">All categories</option>{% for category in categories %}<option value="{{ category.id }}"{% if filters.category == category.id %} selected{% endif %}>{{ category.name }}</option>{% endfor %}</select></div>
-      <div><label for="from">From</label><input id="from" name="from" type="date" value="{{ filters.from }}"></div>
-      <div><label for="to">To</label><input id="to" name="to" type="date" value="{{ filters.to }}"></div>
+      <div>
+        <label for="from">From</label>
+        <div class="date-filter-row">
+          <input id="from" name="from" type="date" value="{{ filters.from }}">
+          <button class="button" type="button" data-clear-date="from" aria-label="Clear From date">Clear</button>
+        </div>
+      </div>
+      <div>
+        <label for="to">To</label>
+        <div class="date-filter-row">
+          <input id="to" name="to" type="date" value="{{ filters.to }}">
+          <button class="button" type="button" data-clear-date="to" aria-label="Clear To date">Clear</button>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <p class="hint">Changes take effect when you apply filters.</p>
+        <button class="button primary" type="submit">Apply filters</button>
+      </div>
     </form>
     <div class="panel table-wrap panel-offset" tabindex="0" role="region" aria-label="Confirmed transactions">
       <table class="data-table">
@@ -51,15 +67,10 @@
 {% block scripts %}
 <script>
   const transactionFilters = document.getElementById("transactionFilters");
-  const merchantFilter = document.getElementById("q");
-  let filterTimer;
-
-  merchantFilter.addEventListener("input", () => {
-    clearTimeout(filterTimer);
-    filterTimer = setTimeout(() => transactionFilters.requestSubmit(), 350);
-  });
-  transactionFilters.querySelectorAll("select, input[type='date'], input[type='month']").forEach(control => {
-    control.addEventListener("change", () => transactionFilters.requestSubmit());
+  transactionFilters.querySelectorAll("[data-clear-date]").forEach(button => {
+    button.addEventListener("click", () => {
+      transactionFilters.elements.namedItem(button.dataset.clearDate).value = "";
+    });
   });
 </script>
 {% if category_chart %}

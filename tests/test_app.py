@@ -100,6 +100,26 @@ class AppFlowTests(unittest.TestCase):
         self.assertIn(b"Drop statement PDFs here", statements_page)
         self.assertIn(b"multiple required", statements_page)
 
+    def test_spending_filters_submit_explicitly_and_allow_empty_dates(self):
+        for date_from, date_to in (("", "2026-09-30"), ("2026-09-01", ""), ("", "")):
+            with self.subTest(date_from=date_from, date_to=date_to):
+                with patch.object(database, "list_transactions", return_value=[]) as transactions:
+                    response = self.client.get("/spending/analyzer", query_string={
+                        "month": "2026-09", "q": "Market", "card": "Visa",
+                        "category": "1", "from": date_from, "to": date_to,
+                    })
+                self.assertEqual(response.status_code, 200)
+                transactions.assert_called_once_with(
+                    status="confirmed", category_id=1, include_excluded=False,
+                    query="Market", card_name="Visa",
+                    date_from=date_from or None, date_to=date_to or None,
+                    statement_posting_from="2026-09-01", statement_posting_to="2026-10-01",
+                )
+                self.assertIn(b'type="submit">Apply filters</button>', response.data)
+                self.assertIn(b'type="button" data-clear-date="from"', response.data)
+                self.assertIn(b'type="button" data-clear-date="to"', response.data)
+                self.assertNotIn(b"requestSubmit", response.data)
+
     def test_spending_only_includes_statements_posted_this_month(self):
         with application.app.app_context():
             categories = {
@@ -218,6 +238,10 @@ class AppFlowTests(unittest.TestCase):
         strategy_page = self.client.get("/ira/analyzer/low_risk").data
         self.assertIn(b'href="/static/app.css"', strategy_page)
         self.assertIn(b'href="/static/ira_strategies.css"', strategy_page)
+        self.assertIn(
+            b'class="allocation-results table-wrap" tabindex="0" role="region" aria-label="Allocation results"',
+            strategy_page,
+        )
 
     def test_strategy_import_replace_edit_and_delete(self):
         csv_content = (
@@ -468,6 +492,11 @@ class AppFlowTests(unittest.TestCase):
         self.assertIn(b"SAMPLE GROCERY", review.data)
         self.assertIn(b"View original PDF", review.data)
         self.assertIn(b'name="card_name"', review.data)
+        self.assertIn(b'id="transaction-scroll-hint"', review.data)
+        self.assertIn(
+            b'tabindex="0" role="region" aria-label="Statement transactions" aria-describedby="transaction-scroll-hint"',
+            review.data,
+        )
 
         pdf_response = self.client.get(review_path + "/pdf")
         self.assertEqual(pdf_response.status_code, 200)
@@ -516,8 +545,8 @@ class AppFlowTests(unittest.TestCase):
         self.assertIn(b"Chase Freedom", spending_page)
         self.assertIn(b'name="card"', spending_page)
         self.assertIn(b'action="/spending/analyzer#confirmed-activity"', spending_page)
-        self.assertIn(b"transactionFilters.requestSubmit()", spending_page)
-        self.assertNotIn(b"Apply filters", spending_page)
+        self.assertNotIn(b"transactionFilters.requestSubmit()", spending_page)
+        self.assertIn(b"Apply filters", spending_page)
         self.assertNotIn(b"Statement history", spending_page)
         filtered_page = self.client.get(
             "/spending/analyzer?card=Chase+Freedom"

@@ -76,6 +76,19 @@ h2 { font-size: clamp(2rem, 4vw, 3.2rem); }
 .form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; align-items: end; gap: 1rem; padding: clamp(1rem, 3vw, 1.6rem); }
 .form-grid > .button { min-height: 58px; }
 .transaction-filters { grid-template-columns: repeat(5, minmax(0, 1fr)) auto; }
+.transaction-filters > div { min-width: 0; }
+.transaction-filters input, .transaction-filters select { min-width: 0; max-width: 100%; }
+.date-filter-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .5rem; }
+.date-filter-row .button { padding: .4rem .65rem; font-size: .8rem; }
+.filter-actions { grid-column: 1 / -1; }
+.filter-actions .hint { margin: 0 0 .65rem; }
+/* iOS native date controls can otherwise impose an intrinsic width on the grid. */
+.transaction-filters input[type="date"], .transaction-filters input[type="month"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  min-inline-size: 0;
+}
 label { display: block; margin-bottom: .4rem; color: var(--muted); font-size: .72rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 input, select { width: 100%; min-height: 58px; padding: .72rem .85rem; border: 1px solid var(--line); border-radius: 9px; outline: none; color: var(--ink); background: #111914; font-size: .86rem; font-weight: 700; }
 input:focus, select:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgb(120 173 137 / 15%); }
@@ -123,13 +136,23 @@ tbody tr:last-child td { border-bottom: 0; }
 .review-actions > .actions { justify-content: flex-end; }
 .error-tag { color: var(--red); }
 
+@media (max-width: 1024px), (pointer: coarse) {
+  input, select, .review-grid input, .review-grid select { font-size: 1rem; }
+  .nav-dropdown a { min-height: 44px; }
+}
+
+@media (max-width: 520px), (hover: none) {
+  .nav-menu:not(.open) .nav-dropdown { visibility: hidden; opacity: 0; }
+  .nav-menu.open .nav-dropdown { visibility: visible; opacity: 1; transform: translateY(0); }
+}
+
 @media (min-width: 1400px) {
   .shell { width: min(1280px, 84vw); }
 }
 
 @media (max-width: 1024px) {
   .shell { width: min(92vw, 920px); padding-bottom: 5rem; }
-  .form-grid, .rule-form { grid-template-columns: 1fr 1fr; }
+  .form-grid, .rule-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .chart-panel { flex-direction: column-reverse; gap: 2rem; padding: 2rem; }
   .chart-stage, .chart-details { flex-basis: auto; }
   .chart-details { width: 100%; }
@@ -146,7 +169,7 @@ tbody tr:last-child td { border-bottom: 0; }
   h1 { font-size: clamp(2rem, 8vw, 3.6rem); }
   h2 { font-size: clamp(2rem, 9vw, 2.7rem); }
   .lede, .intro { margin: .9rem 0 1.8rem; font-size: 1rem; line-height: 1.55; }
-  .form-grid, .rule-form { grid-template-columns: 1fr; }
+  .form-grid, .rule-form { grid-template-columns: minmax(0, 1fr); }
   .panel { border-radius: 15px; }
   .chart-panel { gap: 1.4rem; padding: 1.4rem; }
   .legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }

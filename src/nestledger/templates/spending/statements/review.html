@@ -21,7 +21,8 @@
       <input id="card_name" name="card_name" value="{{ imported.card_name or '' }}" maxlength="100" placeholder="Chase Sapphire Preferred" required>
       <p class="hint">Use the name you want shown in statement history.</p>
     </div>
-    <div class="panel table-wrap" tabindex="0" role="region" aria-label="Statement transactions">
+    <p class="hint" id="transaction-scroll-hint">On smaller screens, swipe or scroll horizontally to review all fields.</p>
+    <div class="panel table-wrap" tabindex="0" role="region" aria-label="Statement transactions" aria-describedby="transaction-scroll-hint">
       <table class="review-grid">
         <thead><tr><th>Date</th><th>Merchant</th><th>Original statement text</th><th>Category</th><th>Amount</th><th>Options</th></tr></thead>
         <tbody>
